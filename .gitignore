@@ -1,0 +1,21 @@
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Capacitor / iOS
+ios/App/Pods/
+ios/App/Podfile.lock
+ios/build/
+ios/App/build/
+ios/DerivedData/
+ios/App/public/
+
+# Build artifacts
+*.ipa
+*.app/
+Payload/
+
+# OS
+.DS_Store
+Thumbs.db

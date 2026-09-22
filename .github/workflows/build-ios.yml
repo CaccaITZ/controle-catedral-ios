@@ -1,0 +1,94 @@
+name: Build iOS IPA
+
+on:
+  # Roda quando você der push na main
+  push:
+    branches: [main]
+  # Permite rodar manualmente pela aba Actions do GitHub
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Compilar IPA não-assinado
+    runs-on: macos-14
+
+    steps:
+      - name: 📥 Baixar código do repositório
+        uses: actions/checkout@v4
+
+      - name: 🟢 Instalar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 📦 Instalar Capacitor
+        run: npm install
+
+      - name: 🍎 Adicionar plataforma iOS
+        run: npx cap add ios
+
+      - name: 🔧 Configurar Info.plist (permissões e orientação)
+        run: |
+          PLIST="ios/App/App/Info.plist"
+          PB=/usr/libexec/PlistBuddy
+          
+          # 1. PERMISSÃO DE REDE LOCAL (iOS 14+) — obrigatório pro Holyrics
+          $PB -c "Add :NSLocalNetworkUsageDescription string 'Permite conectar ao servidor Holyrics na sua rede Wi-Fi para controlar apresentações.'" $PLIST 2>/dev/null || \
+          $PB -c "Set :NSLocalNetworkUsageDescription 'Permite conectar ao servidor Holyrics na sua rede Wi-Fi para controlar apresentações.'" $PLIST
+          
+          # 2. PERMITIR TRÁFEGO HTTP (cleartext) — Holyrics usa HTTP
+          $PB -c "Add :NSAppTransportSecurity dict" $PLIST 2>/dev/null || true
+          $PB -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" $PLIST 2>/dev/null || \
+          $PB -c "Set :NSAppTransportSecurity:NSAllowsArbitraryLoads true" $PLIST
+          
+          # 3. TRAVAR ORIENTAÇÃO EM LANDSCAPE (igual o Android)
+          $PB -c "Delete :UISupportedInterfaceOrientations" $PLIST 2>/dev/null || true
+          $PB -c "Add :UISupportedInterfaceOrientations array" $PLIST
+          $PB -c "Add :UISupportedInterfaceOrientations:UIInterfaceOrientationLandscapeLeft string UIInterfaceOrientationLandscapeLeft" $PLIST
+          $PB -c "Add :UISupportedInterfaceOrientations:UIInterfaceOrientationLandscapeRight string UIInterfaceOrientationLandscapeRight" $PLIST
+          
+          echo "✅ Info.plist configurado"
+
+      - name: 📋 Instalar CocoaPods
+        run: |
+          cd ios/App
+          pod install
+          cd ../..
+
+      - name: 🔨 Compilar app (Release, sem assinatura)
+        working-directory: ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tail -40
+
+      - name: 📦 Empacotar como IPA
+        working-directory: ios/App
+        run: |
+          APP_PATH=$(find build/Build/Products/Release-iphoneos -name "*.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "❌ ERRO: arquivo .app não encontrado"
+            ls -la build/Build/Products/ 2>/dev/null || true
+            exit 1
+          fi
+          echo "📦 App encontrado em: $APP_PATH"
+          
+          mkdir -p Payload
+          cp -r "$APP_PATH" Payload/
+          zip -r ../../controle-catedral.ipa Payload > /dev/null
+          cd ../..
+          ls -lh controle-catedral.ipa
+
+      - name: ⬆️ Disponibilizar IPA para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: controle-catedral-unsigned
+          path: controle-catedral.ipa
+          retention-days: 30
