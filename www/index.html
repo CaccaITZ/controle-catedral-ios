@@ -52,6 +52,59 @@
             border: none;
             background: #000;
         }
+        /* Prévia de vídeo isolada: só substitui o campo Atual enquanto um vídeo toca. */
+        #videoAtual {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #000;
+            object-fit: contain;
+        }
+        body.modo-texto-ativo #videoAtual { display: none !important; }
+
+        .video-token-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2500;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(0,0,0,.82);
+        }
+        .video-token-card {
+            width: min(520px, 100%);
+            padding: 22px;
+            background: #171717;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0,0,0,.55);
+        }
+        .video-token-card h3 { margin: 0 0 12px; }
+        .video-token-card p { font-size: 14px; line-height: 1.45; color: #ddd; }
+        .video-token-card input {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0 14px;
+            background: #050505;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 6px;
+            font-size: 16px;
+        }
+        .video-token-actions { display: flex; gap: 10px; }
+        .video-token-actions button {
+            flex: 1;
+            padding: 11px;
+            border: 0;
+            border-radius: 6px;
+            color: #fff;
+            background: #1565c0;
+            font-size: 14px;
+        }
+        .video-token-actions button.secondary { background: #444; }
+        #videoTokenFeedback { display: block; min-height: 18px; color: #ffcc80; font-size: 12px; margin-top: 8px; }
         img { max-width: 100%; max-height: 100%; object-fit: contain; }
         .next-title {
             padding: 5px;
@@ -326,6 +379,7 @@
 
     <div class="viewer">
         <div class="current">
+            <video id="videoAtual" class="hidden" playsinline muted preload="auto"></video>
             <iframe id="atualContainer" src="http://192.168.10.178/stage-view/widescreen"></iframe>
             <iframe id="textoContainer" class="hidden" src="http://192.168.10.178:80/view/text2"></iframe>
         </div>
@@ -333,6 +387,20 @@
             <div class="next-title">Próximo</div>
             <img id="nextSlide">
             <iframe id="textoProximo" class="hidden" src="http://192.168.10.178:80/stage-view/text"></iframe>
+        </div>
+    </div>
+
+    <!-- Configuração local do token do fluxo de vídeo: não vai para o código do repositório. -->
+    <div id="videoTokenOverlay" class="video-token-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="videoTokenTitle">
+        <div class="video-token-card">
+            <h3 id="videoTokenTitle">Prévia de vídeo do Holyrics</h3>
+            <p id="videoTokenExplanation">Para mostrar o vídeo real no campo Atual, informe o valor que aparece depois de <strong>token=</strong> no endereço <code>/get_video</code> da fonte “VIDEO HOLYRICS” no OBS. O token fica salvo somente neste aparelho.</p>
+            <input id="videoTokenInput" type="password" autocomplete="off" placeholder="Token de vídeo do Holyrics">
+            <div class="video-token-actions">
+                <button id="btnSalvarVideoToken" type="button">Salvar token</button>
+                <button id="btnCancelarVideoToken" class="secondary" type="button">Depois</button>
+            </div>
+            <small id="videoTokenFeedback"></small>
         </div>
     </div>
 
@@ -381,6 +449,15 @@
         let abaAtual     = 'letras';
         let proximoVisivel = true;
         let lastSlideNumber = null;
+
+        // Estado isolado da prévia de vídeo no campo Atual.
+        const VIDEO_TOKEN_KEY = 'holyricsVideoStreamToken';
+        let videoPreviewUrl = '';
+        let videoPreviewPath = '';
+        let videoPreviewActive = false;
+        let videoPreviewErrorPath = '';
+        let videoTokenPromptDismissedPath = '';
+        let latestMediaPlayerInfo = null;
 
         /* ── WAKE LOCK (mantém tela ligada) ── */
         let wakeLock = null;
@@ -453,6 +530,172 @@
                 await api(action);
                 if (!modoTexto) updateData();
             } catch(e) { console.error(e); }
+        }
+
+        /* ── PRÉVIA DE VÍDEO (altera somente o campo Atual) ── */
+        function abrirDialogoTokenVideo(message = '') {
+            const overlay = document.getElementById('videoTokenOverlay');
+            const input = document.getElementById('videoTokenInput');
+            document.getElementById('videoTokenFeedback').textContent = message;
+            input.value = localStorage.getItem(VIDEO_TOKEN_KEY) || '';
+            overlay.classList.remove('hidden');
+            setTimeout(() => input.focus(), 100);
+        }
+
+        function fecharDialogoTokenVideo() {
+            document.getElementById('videoTokenOverlay').classList.add('hidden');
+        }
+
+        function salvarTokenVideo() {
+            const token = document.getElementById('videoTokenInput').value.trim();
+            if (!token) {
+                document.getElementById('videoTokenFeedback').textContent = 'Informe o token para testar a prévia.';
+                return;
+            }
+            localStorage.setItem(VIDEO_TOKEN_KEY, token);
+            videoTokenPromptDismissedPath = '';
+            videoPreviewErrorPath = '';
+            fecharDialogoTokenVideo();
+            videoPreviewUrl = '';
+            atualizarPreviaVideo();
+        }
+
+        document.getElementById('btnSalvarVideoToken').addEventListener('click', salvarTokenVideo);
+        document.getElementById('btnCancelarVideoToken').addEventListener('click', () => {
+            videoTokenPromptDismissedPath = videoPreviewPath;
+            fecharDialogoTokenVideo();
+        });
+
+        function caminhoVideoAtual(info) {
+            let path = String(info.relative_path || info.name || '').trim();
+            // A API pode incluir o diretório "video" na frente do caminho relativo.
+            path = path.replace(/^video[\\/]/i, '');
+            if (!path && info.path) {
+                const fullPath = String(info.path);
+                const marker = '\\media\\video\\';
+                const index = fullPath.toLowerCase().lastIndexOf(marker);
+                path = index >= 0 ? fullPath.slice(index + marker.length) : fullPath.split(/[\\/]/).pop();
+            }
+            return path.replace(/\\/g, '/');
+        }
+
+        function pareceVideo(info) {
+            const path = String(info.relative_path || info.name || info.path || '');
+            return /\\.(mp4|m4v|mov|webm|mkv|avi|mpg|mpeg|3gp)$/i.test(path);
+        }
+
+        function mostrarVideoAtual() {
+            if (modoTexto) return;
+            videoPreviewActive = true;
+            document.getElementById('atualContainer').classList.add('hidden');
+            document.getElementById('videoAtual').classList.remove('hidden');
+        }
+
+        function restaurarAtualHolyrics() {
+            videoPreviewActive = false;
+            const video = document.getElementById('videoAtual');
+            video.classList.add('hidden');
+            video.pause();
+            document.getElementById('atualContainer').classList.toggle('hidden', modoTexto);
+        }
+
+        function sincronizarTempoVideo(info) {
+            const video = document.getElementById('videoAtual');
+            const currentMs = Number(info.time_ms);
+            if (video.readyState >= 1 && Number.isFinite(currentMs) && currentMs >= 0) {
+                const wanted = currentMs / 1000;
+                if (Math.abs(video.currentTime - wanted) > 1.25) {
+                    try { video.currentTime = wanted; } catch (_) {}
+                }
+            }
+            if (info.playing === true) {
+                if (video.paused) video.play().catch(() => {});
+            } else if (!video.paused) {
+                video.pause();
+            }
+        }
+
+        async function atualizarPreviaVideo() {
+            try {
+                const result = await api('GetMediaPlayerInfo');
+                if (!result || result.status !== 'ok' || !result.data) return;
+
+                const info = result.data;
+                latestMediaPlayerInfo = info;
+                const duration = Number(info.duration_ms);
+                const elapsed = Number(info.time_ms);
+                const mediaPath = caminhoVideoAtual(info);
+                const active = pareceVideo(info) &&
+                    (info.playing === true ||
+                     (Number.isFinite(duration) && duration > 0 &&
+                      Number.isFinite(elapsed) && elapsed >= 0 && elapsed < duration));
+
+                if (!active || !mediaPath) {
+                    if (videoPreviewUrl || videoPreviewActive) {
+                        restaurarAtualHolyrics();
+                        const video = document.getElementById('videoAtual');
+                        video.removeAttribute('src');
+                        video.load();
+                        videoPreviewUrl = '';
+                        videoPreviewPath = '';
+                        videoPreviewErrorPath = '';
+                    }
+                    return;
+                }
+
+                if (mediaPath !== videoPreviewPath) {
+                    videoPreviewPath = mediaPath;
+                    videoPreviewErrorPath = '';
+                    videoTokenPromptDismissedPath = '';
+                }
+
+                if (modoTexto) return;
+
+                const token = localStorage.getItem(VIDEO_TOKEN_KEY) || '';
+                if (!token) {
+                    restaurarAtualHolyrics();
+                    if (videoTokenPromptDismissedPath !== mediaPath) {
+                        abrirDialogoTokenVideo();
+                    }
+                    return;
+                }
+
+                if (videoPreviewErrorPath === mediaPath) return;
+
+                const streamUrl = 'http://192.168.10.178/get_video?path=' +
+                    encodeURIComponent(mediaPath) + '&token=' + encodeURIComponent(token);
+                const video = document.getElementById('videoAtual');
+
+                if (streamUrl !== videoPreviewUrl) {
+                    videoPreviewUrl = streamUrl;
+                    video.pause();
+                    video.onerror = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        videoPreviewErrorPath = mediaPath;
+                        restaurarAtualHolyrics();
+                        abrirDialogoTokenVideo('Não foi possível abrir o fluxo de vídeo. Confira o token nas propriedades da fonte “VIDEO HOLYRICS” do OBS e salve novamente.');
+                    };
+                    video.onloadedmetadata = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        sincronizarTempoVideo(latestMediaPlayerInfo || info);
+                    };
+                    video.oncanplay = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        sincronizarTempoVideo(latestMediaPlayerInfo || info);
+                        mostrarVideoAtual();
+                    };
+                    video.src = streamUrl;
+                    video.load();
+                } else {
+                    sincronizarTempoVideo(info);
+                    if (video.readyState >= 2) mostrarVideoAtual();
+                }
+            } catch (error) {
+                // A falha na consulta do player não interfere na exibição normal do Holyrics.
+                console.warn('Não foi possível consultar a prévia de vídeo:', error);
+            } finally {
+                setTimeout(atualizarPreviaVideo, 1000);
+            }
         }
 
         /* ── LOOP DE SLIDE ── */
@@ -632,6 +875,7 @@
 
         /* ── Init ── */
         updateData();
+        atualizarPreviaVideo();
     </script>
 </body>
 </html>
