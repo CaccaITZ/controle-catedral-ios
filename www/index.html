@@ -581,7 +581,7 @@
 
         function pareceVideo(info) {
             const path = String(info.relative_path || info.name || info.path || '');
-            return /\\.(mp4|m4v|mov|webm|mkv|avi|mpg|mpeg|3gp)$/i.test(path);
+            return /\.(mp4|m4v|mov|webm|mkv|avi|mpg|mpeg|3gp)$/i.test(path);
         }
 
         function mostrarVideoAtual() {
