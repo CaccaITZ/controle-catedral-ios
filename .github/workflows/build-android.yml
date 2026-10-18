@@ -1,0 +1,77 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Compilar APK para teste em celular
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Adicionar plataforma Android
+        run: npx cap add android
+
+      - name: Permitir HTTP local e fixar orientação horizontal
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("android/app/src/main/AndroidManifest.xml")
+          manifest = path.read_text(encoding="utf-8")
+
+          app = re.search(r"<application\\b[^>]*>", manifest, re.DOTALL)
+          if not app:
+              raise SystemExit("Tag <application> não encontrada no AndroidManifest.xml")
+          app_tag = app.group(0)
+          if "android:usesCleartextTraffic=" not in app_tag:
+              new_app_tag = app_tag[:-1] + ' android:usesCleartextTraffic="true">'
+              manifest = manifest[:app.start()] + new_app_tag + manifest[app.end():]
+
+          activity = re.search(r"<activity\\b(?=[^>]*android:name=\"[^\"]*MainActivity\")[^>]*>", manifest, re.DOTALL)
+          if activity:
+              activity_tag = activity.group(0)
+              if "android:screenOrientation=" not in activity_tag:
+                  new_activity_tag = activity_tag[:-1] + ' android:screenOrientation="landscape">'
+                  manifest = manifest[:activity.start()] + new_activity_tag + manifest[activity.end():]
+
+          path.write_text(manifest, encoding="utf-8")
+          print("AndroidManifest configurado para HTTP e orientação horizontal.")
+          PY
+
+      - name: Sincronizar arquivos do aplicativo
+        run: npx cap sync android
+
+      - name: Compilar APK de teste
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Disponibilizar APK para download
+        uses: actions/upload-artifact@v4
+        with:
+          name: controle-catedral-android-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
