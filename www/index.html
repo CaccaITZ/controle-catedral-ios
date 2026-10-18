@@ -86,6 +86,14 @@
             display: none !important;
         }
 
+        /* No modo texto: slide atual em tela cheia (esconde painel próximo) */
+        body.modo-texto-ativo .next {
+            display: none !important;
+        }
+        body.modo-texto-ativo .current {
+            flex: 1;
+        }
+
         /* ── Grupo de botões fixos (canto inferior direito) ── */
         #btn-grupo {
             position: fixed;
@@ -98,7 +106,7 @@
             align-items: center;
         }
 
-        #btnToggle, #btnProximo, #btnPlaylist {
+        #btnToggle, #btnPlaylist {
             width: 70px;
             height: 70px;
             border-radius: 50%;
@@ -115,22 +123,10 @@
         }
 
         #btnToggle   { background: #c00; }
-        #btnProximo  { background: #555; display: none; }
         #btnPlaylist { background: #1565c0; font-size: 32px; }
 
         #btnPlaylist:hover { background: #1976d2; }
         #btnPlaylist.ativo { background: #0d47a1; }
-        #btnProximo.oculto { background: #333; }
-
-        /* Próximo só aparece no modo texto */
-        body.modo-texto-ativo #btnProximo { display: flex; }
-
-        #btnProximo .label {
-            font-size: 9px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            opacity: 0.8;
-        }
 
         /* ── GAVETA ── */
         #gaveta {
@@ -346,9 +342,6 @@
 
     <!-- Grupo de botões inferiores -->
     <div id="btn-grupo">
-    <button id="btnProximo" onclick="toggleProximo()" title="Mostrar/ocultar próximo">
-        👁️<span class="label">Próximo</span>
-    </button>
     <button id="btnToggle" onclick="toggleModo()" title="Modo texto">👁️</button>
     <button id="btnPlaylist" onclick="toggleGaveta()" title="Lista de reprodução">☰</button>
     </div>
@@ -388,6 +381,34 @@
         let abaAtual     = 'letras';
         let proximoVisivel = true;
 
+        /* ── WAKE LOCK (mantém tela ligada) ── */
+        let wakeLock = null;
+        async function ativarWakeLock() {
+            if (!('wakeLock' in navigator)) {
+                console.log('Wake Lock não suportado neste navegador');
+                return;
+            }
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log('✅ Tela mantida ligada (Wake Lock ativo)');
+                wakeLock.addEventListener('release', () => {
+                    console.log('Wake Lock liberado (o sistema pode dormir se inativo)');
+                });
+            } catch (e) {
+                console.log('Não foi possível ativar Wake Lock:', e);
+            }
+        }
+        // Reativa o Wake Lock se o iPad voltar do lock ou troca de app
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && wakeLock === null) {
+                ativarWakeLock();
+            }
+        });
+        // Pede o primeiro Wake Lock no primeiro toque em qualquer lugar (regra do iOS)
+        document.addEventListener('click', () => {
+            if (wakeLock === null) ativarWakeLock();
+        }, { once: true });
+
         const abas = {
             letras: { items: [], idAtivo: null, carregada: false },
             midia:  { items: [], idAtivo: null, carregada: false }
@@ -402,8 +423,6 @@
             document.getElementById('nextSlide').classList.toggle('hidden', modoTexto);
             document.getElementById('textoProximo').classList.toggle('hidden', !modoTexto);
             document.getElementById('btnToggle').style.background = modoTexto ? '#0a0' : '#c00';
-            // Ao sair do modo texto, restaura o painel Próximo
-            if (!modoTexto) mostrarProximo(true);
         }
 
         /* ── PAINEL PRÓXIMO (só no modo texto) ── */
