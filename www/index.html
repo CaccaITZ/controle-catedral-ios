@@ -555,7 +555,7 @@
                 const tokenDaUrl = url.searchParams.get('token');
                 if (tokenDaUrl) return tokenDaUrl.trim();
             } catch (_) {}
-            const encontrado = texto.match(/[?&]token=([^&#\\s]+)/i);
+            const encontrado = texto.match(/[?&]token=([^&#\s]+)/i);
             if (encontrado) {
                 try { return decodeURIComponent(encontrado[1]).trim(); }
                 catch (_) { return encontrado[1].trim(); }
