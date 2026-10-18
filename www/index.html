@@ -46,7 +46,7 @@
         }
         .hidden { display: none !important; }
 
-        #textoContainer, #textoProximo, #atualContainer {
+        #textoContainer, #textoProximo {
             width: 100%;
             height: 100%;
             border: none;
@@ -326,7 +326,7 @@
 
     <div class="viewer">
         <div class="current">
-            <iframe id="atualContainer" src="http://192.168.10.178/stage-view/widescreen"></iframe>
+            <img id="atualContainer" alt="Prévia atual do Holyrics">
             <iframe id="textoContainer" class="hidden" src="http://192.168.10.178:80/stage-view/text2"></iframe>
         </div>
         <div class="next" id="nextPanel">
@@ -381,6 +381,9 @@
         let abaAtual     = 'letras';
         let proximoVisivel = true;
         let lastSlideNumber = null;
+        let stageImageId = '';
+        let stageImageDelay = 200;
+        let stageImageLoopStarted = false;
 
         /* ── WAKE LOCK (mantém tela ligada) ── */
         let wakeLock = null;
@@ -455,6 +458,26 @@
             } catch(e) { console.error(e); }
         }
 
+        /* ── PRÉVIA DO PALCO: imagens sequenciais do Holyrics (inclui vídeo) ── */
+        async function refreshStageImage() {
+            try {
+                const url = `http://192.168.10.178/stage-view/widescreen.jpg?id=${encodeURIComponent(stageImageId)}&json=1&_=${Date.now()}`;
+                const response = await fetch(url, { cache: 'no-store' });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                if (data.img64 && data.img64 !== 'equals') {
+                    document.getElementById('atualContainer').src = 'data:image/jpeg;base64,' + data.img64;
+                }
+                if (data.id !== undefined && data.id !== null) stageImageId = String(data.id);
+                const delay = Number(data.delay);
+                stageImageDelay = Number.isFinite(delay) && delay >= 50 ? delay : 200;
+            } catch (error) {
+                console.warn('Prévia do palco indisponível:', error);
+                stageImageDelay = 1500;
+            }
+            setTimeout(refreshStageImage, stageImageDelay);
+        }
+
         /* ── LOOP DE SLIDE ── */
         async function updateData() {
             if (modoTexto) { setTimeout(updateData, 2000); return; }
@@ -465,12 +488,7 @@
                 });
                 if (j.status === 'ok' && j.data) {
                     const atual = Number(j.data.slide_number);
-                    // Só recarrega o iframe quando o slide MUDA (evita reiniciar o vídeo a cada 2s)
-                    if (atual !== lastSlideNumber) {
-                        lastSlideNumber = atual;
-                        document.getElementById('atualContainer').src =
-                            `http://192.168.10.178/stage-view/widescreen?_=${Date.now()}`;
-                    }
+                    // A imagem atual vem do fluxo de prévias; não recarregamos a cada mudança de slide.
                     if (j.data.slides && j.data.slides[atual]) {
                         document.getElementById('nextSlide').src =
                             'data:image/jpeg;base64,' + j.data.slides[atual].preview;
@@ -631,6 +649,7 @@
         }
 
         /* ── Init ── */
+        refreshStageImage();
         updateData();
     </script>
 </body>
