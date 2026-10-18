@@ -394,8 +394,9 @@
     <div id="videoTokenOverlay" class="video-token-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="videoTokenTitle">
         <div class="video-token-card">
             <h3 id="videoTokenTitle">Prévia de vídeo do Holyrics</h3>
-            <p id="videoTokenExplanation">Para mostrar o vídeo real no campo Atual, informe o valor que aparece depois de <strong>token=</strong> no endereço <code>/get_video</code> da fonte “VIDEO HOLYRICS” no OBS. O token fica salvo somente neste aparelho.</p>
-            <input id="videoTokenInput" type="password" autocomplete="off" placeholder="Token de vídeo do Holyrics">
+            <p id="videoTokenExplanation">Cole o token ou o endereço completo que aparece na fonte “VIDEO HOLYRICS” do OBS. Se colar o endereço inteiro, o aplicativo extrairá o token automaticamente. O valor ficará visível para conferência e será salvo somente neste aparelho.</p>
+            <input id="videoTokenInput" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="text" placeholder="Cole aqui o token ou a URL completa" onfocus="this.select()">
+            <button id="btnColarVideoToken" type="button" style="width:100%;padding:9px;margin:0 0 12px;background:#333;color:#fff;border:1px solid #555;border-radius:6px">Colar da área de transferência</button>
             <div class="video-token-actions">
                 <button id="btnSalvarVideoToken" type="button">Salvar token</button>
                 <button id="btnCancelarVideoToken" class="secondary" type="button">Depois</button>
@@ -546,13 +547,47 @@
             document.getElementById('videoTokenOverlay').classList.add('hidden');
         }
 
+        function extrairTokenVideo(valor) {
+            let texto = String(valor || '').trim();
+            if (!texto) return '';
+            try {
+                const url = new URL(texto);
+                const tokenDaUrl = url.searchParams.get('token');
+                if (tokenDaUrl) return tokenDaUrl.trim();
+            } catch (_) {}
+            const encontrado = texto.match(/[?&]token=([^&#\\s]+)/i);
+            if (encontrado) {
+                try { return decodeURIComponent(encontrado[1]).trim(); }
+                catch (_) { return encontrado[1].trim(); }
+            }
+            if (/^token=/i.test(texto)) texto = texto.slice(6);
+            return texto.trim();
+        }
+
+        async function colarTokenDaAreaTransferencia() {
+            const campo = document.getElementById('videoTokenInput');
+            const feedback = document.getElementById('videoTokenFeedback');
+            try {
+                if (!navigator.clipboard || !navigator.clipboard.readText) {
+                    throw new Error('clipboard indisponível');
+                }
+                campo.value = await navigator.clipboard.readText();
+                campo.focus();
+                feedback.textContent = campo.value ? 'Conteúdo colado. Confira e toque em Salvar token.' : 'A área de transferência está vazia.';
+            } catch (_) {
+                campo.focus();
+                feedback.textContent = 'Toque e segure no campo acima e escolha Colar.';
+            }
+        }
+
         function salvarTokenVideo() {
-            const token = document.getElementById('videoTokenInput').value.trim();
+            const token = extrairTokenVideo(document.getElementById('videoTokenInput').value);
             if (!token) {
-                document.getElementById('videoTokenFeedback').textContent = 'Informe o token para testar a prévia.';
+                document.getElementById('videoTokenFeedback').textContent = 'Cole o token ou a URL da fonte “VIDEO HOLYRICS”.';
                 return;
             }
             localStorage.setItem(VIDEO_TOKEN_KEY, token);
+            document.getElementById('videoTokenInput').value = token;
             videoTokenPromptDismissedPath = '';
             videoPreviewErrorPath = '';
             fecharDialogoTokenVideo();
@@ -560,6 +595,7 @@
             atualizarPreviaVideo();
         }
 
+        document.getElementById('btnColarVideoToken').addEventListener('click', colarTokenDaAreaTransferencia);
         document.getElementById('btnSalvarVideoToken').addEventListener('click', salvarTokenVideo);
         document.getElementById('btnCancelarVideoToken').addEventListener('click', () => {
             videoTokenPromptDismissedPath = videoPreviewPath;
