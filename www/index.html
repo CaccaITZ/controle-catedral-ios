@@ -1020,17 +1020,14 @@
                     return;
                 }
 
-                // Se o módulo OBS ignorou este vídeo (ex.: filtro de "!"), não mostramos
-                // por engano o vídeo anterior que permaneceu configurado na fonte.
-                if (!urlCorrespondeAoVideo(streamUrl, mediaPath)) {
-                    restaurarAtualHolyrics();
-                    const video = document.getElementById('videoAtual');
-                    video.removeAttribute('src');
-                    video.load();
-                    videoPreviewUrl = '';
-                    videoPreviewErrorPath = '';
-                    return;
-                }
+                // A URL do módulo é a fonte confiável e já inclui o token necessário.
+                // Não bloqueie a reprodução por diferenças de caminho entre o nome retornado
+                // pela API do Holyrics e o caminho usado pelo plugin em /get_video.
+                // O módulo atualiza a URL da fonte a cada vídeo elegível.
+                console.log('Prévia Catedral: URL de vídeo recebida do OBS.', {
+                    mediaPath: mediaPath,
+                    streamUrl: streamUrl
+                });
 
                 const video = document.getElementById('videoAtual');
                 if (streamUrl !== videoPreviewUrl) {
