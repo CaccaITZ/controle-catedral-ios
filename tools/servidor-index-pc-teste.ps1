@@ -210,7 +210,8 @@ function Handle-Request($client) {
     }
 }
 
-$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+# Aceita conexões do próprio PC e do computador Holyrics na rede local.
+$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Any, $port)
 try {
     $listener.Start()
 } catch {
@@ -222,8 +223,9 @@ try {
 Write-Host ''
 Write-Host 'Servidor de teste do Controle Catedral iniciado.' -ForegroundColor Cyan
 Write-Host 'Página: http://127.0.0.1:8766/index-pc-teste.html'
-Write-Host 'Endpoint de recebimento: http://127.0.0.1:8766/api/video-preview'
-Write-Host 'No módulo Holyrics, configure IP 127.0.0.1 e porta 8766 para o teste no PC.'
+Write-Host 'Endpoint de recebimento nesta rede: http://192.168.10.161:8766/api/video-preview (ajuste o IP se necessário)'
+Write-Host 'No módulo Holyrics (PC 192.168.10.178), configure IP receptor 192.168.10.161 e porta 8766.'
+Write-Host 'Se necessário, permita conexões TCP de entrada na porta 8766 no Firewall do Windows.'
 Write-Host 'A API do Holyrics é consultada pela porta 4545. Mantenha esta janela aberta.'
 Write-Host 'Pressione Ctrl+C para encerrar.'
 Write-Host ''
