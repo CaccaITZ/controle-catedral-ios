@@ -1,45 +1,42 @@
-# Integração Holyrics — Prévia de Vídeo Catedral
+# Prévia de Vídeo — envio direto ao Controle Catedral
 
-Esta integração é uma etapa separada do aplicativo. Ela não altera as funções atuais do app nem modifica a fonte do OBS.
+Este módulo envia a URL autenticada do vídeo diretamente ao aplicativo Controle Catedral. **Não consulta o OBS e não exige que o OBS esteja aberto.**
 
 ## Arquivos
 
-- `01-modulo-previa-catedral.js`: módulo do Holyrics. Detecta o evento `displaying / any_video` e publica as informações do vídeo em uma variável global compartilhada do Holyrics.
-- `02-api-server-previa-catedral.js`: exemplo de implementação para expor essa informação por uma ação personalizada do API Server.
-- A chave global compartilhada é `@catedral#video_preview`.
-- A ação HTTP será `GetCatedralVideoPreview`.
+- `01-modulo-previa-catedral.js`: módulo que detecta vídeos exibidos no Holyrics, gera a URL com o algoritmo do módulo Video Sync OBS+ e envia essa URL por HTTP POST ao aplicativo.
+- A antiga integração `02-api-server-previa-catedral.js` não faz parte deste fluxo. O aplicativo não consulta uma ação personalizada para buscar a URL: ele recebe a requisição enviada pelo módulo.
 
-## Como funciona
+## Fluxo
 
-1. O módulo observa cada vídeo exibido, sem aplicar o filtro do módulo OBS para nomes iniciados por `!`.
-2. Obtém a configuração local do servidor de vídeo do Holyrics e calcula o token por arquivo com a mesma sequência do módulo Video Sync OBS+.
-3. Armazena URL, caminho, nome e horário da atualização no estado global do Holyrics.
-4. A ação personalizada do API Server devolve esses dados ao app.
+1. Ao exibir um vídeo, o módulo lê a configuração do serviço de vídeo do Holyrics em `.plugin_system_settings.txt`.
+2. Usa o caminho completo do vídeo e o segredo dessa configuração para calcular o token, seguindo o algoritmo do Video Sync OBS+.
+3. Envia um POST para `http://IP_DO_DISPOSITIVO:8766/api/video-preview`, com `url`, `path`, `name` e `updated_at`.
+4. O Controle Catedral recebe a URL no receptor HTTP nativo e reproduz o vídeo no campo **Atual**.
+5. A API do Holyrics continua sendo utilizada separadamente para sincronizar o tempo do vídeo e controlar a apresentação.
 
-## Importante antes do teste
+## Configuração do módulo
 
-- O arquivo usa o evento de módulo `displaying / any_video` e requer Holyrics 2.24 ou superior.
-- A configuração local de vídeo deve conter `ip`, `port` e `token`, como no Video Sync OBS+.
-- O IP configurado precisa ser alcançável pelo tablet. A URL é gerada com o IP da configuração, nunca com `localhost`.
-- A função `request` do segundo arquivo é um exemplo completo. Se o API Server já tiver uma implementação personalizada, preserve-a e integre somente o caso `GetCatedralVideoPreview`; não sobrescreva as ações existentes.
-- Esta primeira versão é para validação no computador. Só depois de comprovar no Holyrics que a ação retorna a URL correta, integraremos o app para consumir a ação, alterando exclusivamente a prévia do campo **Atual**.
-- O aplicativo deverá continuar confirmando pelo `GetMediaPlayerInfo` se o vídeo está ativo e usando as informações de tempo do player para manter a sincronização.
+Na configuração do módulo, defina:
 
-## Teste esperado
+- **IP do dispositivo Controle Catedral:** o IP local do tablet/celular que executa o aplicativo.
+- **Porta receptora HTTP:** `8766`.
 
-Depois de instalar e ativar o módulo e integrar a ação personalizada, iniciar um vídeo deve fazer a ação `GetCatedralVideoPreview` retornar um objeto semelhante a:
+A configuração de IP/porta da API do Holyrics é independente da porta do receptor de vídeo. Neste projeto, a API foi configurada em `4545`; o receptor de URL do aplicativo utiliza `8766`.
 
-```json
-{
-  "status": "ok",
-  "data": {
-    "available": true,
-    "url": "http://IP:PORTA/get_video?path=...&token=...",
-    "path": "...",
-    "name": "...",
-    "updated_at": 0
-  }
-}
-```
+Se a política de requisições permitidas do Holyrics bloquear o envio, inclua o IP do dispositivo Controle Catedral em **Arquivo → Configurações → Avançado → JavaScript → Configurações → Requisições permitidas**.
 
-O endereço e o token acima são exemplos de formato; o valor real é calculado pelo módulo durante a execução.
+## Teste do índice no PC antes do APK
+
+1. Baixe `www/index-pc-teste.html` e `tools/servidor-index-pc-teste.ps1) para a mesma pasta.
+2. Execute o script com Windows PowerShell. Ele abre o índice de teste e fornece localmente o endpoint HTTP que simula o receptor nativo.
+3. Na configuração do módulo no Holyrics, use IP `127.0.0.1` e porta `8766`. Como o Holyrics e o servidor de teste estão no mesmo PC, a requisição chegará ao teste local.
+4. Inicie um vídeo no Holyrics. O servidor mostrará no PowerShell que recebeu a URL; a página de teste deverá reproduzi-la em **Atual**.
+
+Mantenha a janela do PowerShell aberta durante o teste. A porta `4545` é usada pelo proxy local apenas para consultar a API do Holyrics; a URL autenticada do vídeo chega por POST em `8766`.
+
+## Observações
+
+- O teste de navegador utiliza um servidor PowerShell local porque uma página HTML aberta sozinha não consegue receber conexões HTTP de entrada.
+- O endpoint nativo `/api/video-preview` é implementado para Android no build do aplicativo. O código principal e as funções de letras, playlist, próximo slide e modo texto não dependem do OBS.
+- O módulo envia a URL mais recente quando um vídeo é exibido. A disponibilidade do vídeo no dispositivo ainda depende de o IP/porta do serviço de vídeo do Holyrics serem acessíveis pela rede local.
