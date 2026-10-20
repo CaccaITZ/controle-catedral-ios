@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, previa-video-api-holyrics-20261020]
   workflow_dispatch:
 
 jobs:
@@ -40,7 +40,7 @@ jobs:
           path = Path("android/app/src/main/AndroidManifest.xml")
           manifest = path.read_text(encoding="utf-8")
 
-          app = re.search(r"<application\b[^>]*>", manifest, re.DOTALL)
+          app = re.search(r"<application\\b[^>]*>", manifest, re.DOTALL)
           if not app:
               raise SystemExit("Tag <application> não encontrada no AndroidManifest.xml")
           app_tag = app.group(0)
@@ -48,7 +48,7 @@ jobs:
               new_app_tag = app_tag[:-1] + ' android:usesCleartextTraffic="true">'
               manifest = manifest[:app.start()] + new_app_tag + manifest[app.end():]
 
-          activity = re.search(r"<activity\b(?=[^>]*android:name=\"[^\"]*MainActivity\")[^>]*>", manifest, re.DOTALL)
+          activity = re.search(r"<activity\\b(?=[^>]*android:name=\\"[^\\"]*MainActivity\\")[^>]*>", manifest, re.DOTALL)
           if activity:
               activity_tag = activity.group(0)
               if "android:screenOrientation=" not in activity_tag:
