@@ -27,9 +27,6 @@ jobs:
       - name: 🍎 Adicionar plataforma iOS
         run: npx cap add ios
 
-      - name: 📡 Registrar receptor HTTP nativo para a prévia
-        run: python3 tools/configure_ios_video_preview.py
-
       - name: 🔧 Configurar Info.plist (permissões e orientação)
         run: |
           PLIST="ios/App/App/Info.plist"
