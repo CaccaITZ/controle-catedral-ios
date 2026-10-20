@@ -1058,7 +1058,6 @@
                     // Só recarrega o iframe quando o slide MUDA (evita reiniciar o vídeo a cada 2s)
                     if (atual !== lastSlideNumber) {
                         lastSlideNumber = atual;
-                        document.getElementById('atualContainer').src =
                         document.getElementById('atualContainer').src = 'http://' + getHolyricsIp() + '/stage-view/widescreen?_=' + Date.now();
                     }
                     if (j.data.slides && j.data.slides[atual]) {
