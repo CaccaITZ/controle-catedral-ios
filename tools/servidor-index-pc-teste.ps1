@@ -1,6 +1,7 @@
-# Servidor local de teste do Controle Catedral (Windows PowerShell, sem Python)
-# Serve index-pc-teste.html, recebe POST do módulo do Holyrics e faz proxy da API.
-# Para o teste no PC, configure no módulo do Holyrics: IP 127.0.0.1 e porta 8766.
+# Receptor local de prévia do Controle Catedral (Windows PowerShell, sem Python)
+# Execute ESTE script no PC que executa o Holyrics.
+# O módulo envia para 127.0.0.1:8766; o app consulta o PC do Holyrics na porta 8766.
+# O servidor também serve o índice de teste e encaminha as chamadas da API Holyrics.
 
 $ErrorActionPreference = 'Stop'
 $port = 8766
@@ -222,9 +223,19 @@ try {
 
 Write-Host ''
 Write-Host 'Servidor de teste do Controle Catedral iniciado.' -ForegroundColor Cyan
-Write-Host 'Página: http://127.0.0.1:8766/index-pc-teste.html'
-Write-Host 'Endpoint de recebimento nesta rede: http://192.168.10.61:8766/api/video-preview (ajuste o IP se necessário)'
-Write-Host 'No módulo Holyrics (PC 192.168.10.178), configure IP receptor 192.168.10.61 e porta 8766.'
+Write-Host 'Página local de teste: http://127.0.0.1:8766/index-pc-teste.html'
+Write-Host 'No módulo do Holyrics, o destino é fixo: http://127.0.0.1:8766/api/video-preview'
+Write-Host 'No app, informe o IP deste PC (o que executa o Holyrics); o receptor usa a porta 8766.'
+$localIPv4 = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
+    Where-Object { $_.OperationalStatus -eq 'Up' } |
+    ForEach-Object { $_.GetIPProperties().UnicastAddresses } |
+    Where-Object {
+        $_.Address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork -and
+        -not [System.Net.IPAddress]::IsLoopback($_.Address)
+    } |
+    ForEach-Object { $_.Address.IPAddressToString } |
+    Sort-Object -Unique
+foreach ($ip in $localIPv4) { Write-Host ('Acesso pela rede: http://' + $ip + ':8766/index-pc-teste.html') }
 Write-Host 'Se necessário, permita conexões TCP de entrada na porta 8766 no Firewall do Windows.'
 Write-Host 'A API do Holyrics é consultada pela porta 4545. Mantenha esta janela aberta.'
 Write-Host 'Pressione Ctrl+C para encerrar.'
