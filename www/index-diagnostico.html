@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Palco Holyrics</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── Layout principal ── */
+        .viewer {
+            flex: 1;
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        .current {
+            flex: 3;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #333;
+            position: relative;
+        }
+        .next {
+            flex: 1;
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #333;
+            min-width: 250px;
+        }
+        .hidden { display: none !important; }
+
+        #textoContainer, #textoProximo, #atualContainer {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #000;
+        }
+        /* Prévia de vídeo isolada: só substitui o campo Atual enquanto um vídeo toca. */
+        #videoAtual {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #000;
+            object-fit: contain;
+        }
+        body.modo-texto-ativo #videoAtual { display: none !important; }
+
+        .video-token-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2500;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 8px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            background: rgba(0,0,0,.82);
+        }
+        .video-token-card {
+            width: min(520px, 100%);
+            max-height: calc(100vh - 16px);
+            max-height: calc(100dvh - 16px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            margin: auto 0;
+            padding: 14px 18px;
+            background: #171717;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0,0,0,.55);
+        }
+        .video-token-card h3 { margin: 0 0 6px; font-size: 18px; }
+        .video-token-card p { font-size: 12px; line-height: 1.35; color: #ddd; margin: 5px 0 8px; }
+        .video-token-card label { display: block; font-size: 12px; }
+        .video-token-card input {
+            display: block;
+            width: 100%;
+            padding: 7px 10px;
+            margin: 4px 0 8px;
+            background: #050505;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 6px;
+            font-size: 16px;
+            min-height: 36px;
+        }
+        .video-token-actions { display: flex; gap: 10px; margin-top: 6px; }
+        .video-token-actions button {
+            flex: 1;
+            padding: 9px;
+            border: 0;
+            border-radius: 6px;
+            color: #fff;
+            background: #1565c0;
+            font-size: 14px;
+        }
+        .video-token-actions button.secondary { background: #444; }
+        #videoTokenFeedback { display: block; min-height: 18px; color: #ffcc80; font-size: 12px; margin-top: 8px; }
+        @media (orientation: landscape) and (max-height: 520px) {
+            .video-token-overlay { padding: 4px; }
+            .video-token-card {
+                width: min(760px, 100%);
+                max-height: calc(100vh - 8px);
+                max-height: calc(100dvh - 8px);
+                padding: 9px 14px;
+            }
+            .video-token-card h3 { font-size: 16px; margin-bottom: 4px; }
+            .video-token-card p { font-size: 11px; line-height: 1.25; margin: 3px 0 5px; }
+            .video-token-card input { padding: 5px 8px; min-height: 30px; margin: 3px 0 5px; }
+            .video-token-actions button { padding: 7px; }
+        }
+        #videoDiagPanel {
+            position: fixed; left: 8px; bottom: 8px; z-index: 5000;
+            width: min(620px, 48vw); max-height: 38vh; overflow: auto;
+            padding: 9px 11px; border: 1px solid #e0a000; border-radius: 6px;
+            background: rgba(0,0,0,.92); color: #fff3c4;
+            font: 12px/1.35 Consolas, monospace; white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+        #videoDiagPanel strong { color: #ffd54f; }
+        #videoDiagText { margin: 5px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+        @media (max-width: 800px) {
+            #videoDiagPanel { width: 70vw; max-height: 28vh; font-size: 10px; }
+        }
+
+        img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .next-title {
+            padding: 5px;
+            text-align: center;
+            background: #222;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        /* ── Botões de navegação ── */
+        .nav-btn {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            font-size: 50px;
+            z-index: 1000;
+            outline: none;
+            cursor: pointer;
+        }
+        #btnPrev { left: 10px; }
+        #btnNext { right: 10px; }
+
+        /* Esconde só os botões de navegação no modo texto */
+        body.modo-texto-ativo #btnPrev,
+        body.modo-texto-ativo #btnNext {
+            display: none !important;
+        }
+
+        /* No modo texto: slide atual em tela cheia (esconde painel próximo) */
+        body.modo-texto-ativo .next {
+            display: none !important;
+        }
+        body.modo-texto-ativo .current {
+            flex: 1;
+        }
+
+        /* ── Grupo de botões fixos (canto inferior direito) ── */
+        #btn-grupo {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: row;
+            gap: 12px;
+            z-index: 1000;
+            align-items: center;
+        }
+
+        #btnToggle, #btnPlaylist {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            line-height: 1.2;
+        }
+
+        #btnToggle   { background: #c00; }
+        #btnPlaylist { background: #1565c0; font-size: 32px; }
+
+        #btnPlaylist:hover { background: #1976d2; }
+        #btnPlaylist.ativo { background: #0d47a1; }
+
+        /* ── GAVETA ── */
+        #gaveta {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 0;
+            background: #111;
+            border-top: 2px solid #1565c0;
+            z-index: 999;
+            overflow: hidden;
+            transition: height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+        #gaveta.aberta { height: 45vh; }
+
+        /* Header da gaveta */
+        .gaveta-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 14px;
+            background: #1a1a2e;
+            flex-shrink: 0;
+            border-bottom: 1px solid #333;
+            gap: 10px;
+        }
+
+        /* ── Abas ── */
+        .gaveta-tabs {
+            display: flex;
+            gap: 4px;
+            flex: 1;
+        }
+        .tab-btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 6px 6px 0 0;
+            background: #2a2a40;
+            color: #888;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            letter-spacing: 0.5px;
+        }
+        .tab-btn:hover { background: #333355; color: #bbb; }
+        .tab-btn.ativa { background: #1565c0; color: #fff; }
+
+        /* Ações à direita */
+        .gaveta-acoes {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .btn-gaveta-acao {
+            background: #1e3a5f;
+            border: 1px solid #1565c0;
+            border-radius: 6px;
+            color: #90caf9;
+            font-size: 12px;
+            padding: 5px 10px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-gaveta-acao:hover { background: #1565c0; color: #fff; }
+        .btn-fechar-gaveta {
+            background: transparent;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #aaa;
+            font-size: 18px;
+            line-height: 1;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-fechar-gaveta:hover { background: #333; color: #fff; }
+
+        /* Corpo da gaveta */
+        .gaveta-body {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Status (loading/erro) */
+        .gaveta-status {
+            padding: 18px;
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        /* Lista de itens */
+        .lista-playlist {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+        .lista-playlist::-webkit-scrollbar { width: 6px; }
+        .lista-playlist::-webkit-scrollbar-track { background: #111; }
+        .lista-playlist::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .lista-playlist::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        /* Itens da lista */
+        .playlist-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #1e1e1e;
+            transition: background 0.15s;
+            user-select: none;
+        }
+        .playlist-item:hover { background: #1e2d45; }
+        .playlist-item.ativo {
+            background: #0d2a4a;
+            border-left: 3px solid #42a5f5;
+        }
+        .playlist-item.titulo-secao {
+            background: #161616;
+            cursor: default;
+            padding: 4px 14px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+        .playlist-item.titulo-secao:hover { background: #161616; }
+        .playlist-item.titulo-secao .item-nome {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #4caf50;
+            font-weight: bold;
+        }
+
+        .item-icone {
+            font-size: 18px;
+            flex-shrink: 0;
+            width: 24px;
+            text-align: center;
+        }
+        .item-info { flex: 1; overflow: hidden; }
+        .item-nome {
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #e0e0e0;
+        }
+        .item-artista {
+            font-size: 11px;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .item-tipo {
+            font-size: 10px;
+            color: #555;
+            flex-shrink: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-ativo {
+            font-size: 9px;
+            background: #1565c0;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 10px;
+            flex-shrink: 0;
+        }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 18px; height: 18px;
+            border: 3px solid #333;
+            border-top-color: #1565c0;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="viewer">
+        <div class="current">
+            <video id="videoAtual" class="hidden" playsinline muted preload="auto"></video>
+            <iframe id="atualContainer" src="http://192.168.10.178/stage-view/widescreen"></iframe>
+            <iframe id="textoContainer" class="hidden" src="http://192.168.10.178:80/view/text2"></iframe>
+        </div>
+        <div class="next" id="nextPanel">
+            <div class="next-title">Próximo</div>
+            <img id="nextSlide">
+            <iframe id="textoProximo" class="hidden" src="http://192.168.10.178:80/stage-view/text"></iframe>
+        </div>
+    </div>
+
+    <!-- Configuração da conexão OBS WebSocket usada exclusivamente pela prévia do campo Atual. -->
+    <div id="videoTokenOverlay" class="video-token-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="videoTokenTitle">
+        <div class="video-token-card">
+            <h3 id="videoTokenTitle">Conectar à fonte de vídeo do OBS</h3>
+            <p id="videoTokenExplanation">O aplicativo vai ler automaticamente a URL atual da fonte no OBS. Informe o endereço, a porta e a senha do OBS WebSocket (não é o token da API do Holyrics). Os dados ficam salvos somente neste aparelho.</p>
+            <label for="obsWsHostInput">IP ou host do computador com OBS</label>
+            <input id="obsWsHostInput" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="192.168.10.x">
+            <label for="obsWsPortInput">Porta do OBS WebSocket</label>
+            <input id="obsWsPortInput" type="number" inputmode="numeric" min="1" max="65535" placeholder="Porta configurada no OBS">
+            <label for="obsWsPasswordInput">Senha do OBS WebSocket</label>
+            <input id="obsWsPasswordInput" type="password" autocomplete="new-password" placeholder="Senha configurada no OBS">
+            <label for="obsWsInputName">Nome da fonte no OBS</label>
+            <input id="obsWsInputName" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" value="VIDEO HOLYRICS">
+            <div class="video-token-actions">
+                <button id="btnSalvarVideoToken" type="button">Testar e salvar</button>
+                <button id="btnCancelarVideoToken" class="secondary" type="button">Depois</button>
+            </div>
+            <small id="videoTokenFeedback"></small>
+        </div>
+    </div>
+
+    <!-- Botões de navegação -->
+    <button class="nav-btn" id="btnPrev" onclick="sendCmd('ActionPrevious')">◀</button>
+    <button class="nav-btn" id="btnNext" onclick="sendCmd('ActionNext')">▶</button>
+
+    <!-- Grupo de botões inferiores -->
+    <div id="btn-grupo">
+    <button id="btnToggle" onclick="toggleModo()" title="Modo texto">👁️</button>
+    <button id="btnPlaylist" onclick="toggleGaveta()" title="Lista de reprodução">☰</button>
+    </div>
+
+    <!-- Gaveta de playlist -->
+    <div id="gaveta">
+        <div class="gaveta-header">
+            <div class="gaveta-tabs">
+                <button class="tab-btn ativa" id="tab-letras" onclick="trocarAba('letras')">🎵 Letras</button>
+                <button class="tab-btn"        id="tab-midia"  onclick="trocarAba('midia')">🎬 Mídia</button>
+            </div>
+            <div class="gaveta-acoes">
+                <button class="btn-gaveta-acao" onclick="carregarAbaAtual()">↻ Atualizar</button>
+                <button class="btn-fechar-gaveta" onclick="fecharGaveta()">✕</button>
+            </div>
+        </div>
+
+        <!-- Painel Letras -->
+        <div class="gaveta-body" id="painel-letras">
+            <div class="gaveta-status" id="status-letras"></div>
+            <div class="lista-playlist" id="lista-letras"></div>
+        </div>
+
+        <!-- Painel Mídia -->
+        <div class="gaveta-body hidden" id="painel-midia">
+            <div class="gaveta-status" id="status-midia"></div>
+            <div class="lista-playlist" id="lista-midia"></div>
+        </div>
+    </div>
+
+    <div id="videoDiagPanel"><strong>DIAGNÓSTICO DA PRÉVIA DE VÍDEO</strong><pre id="videoDiagText">Iniciando teste…</pre></div>
+    <script>
+        const DEFAULT_HOLYRICS_IP = "192.168.10.178";
+        const HOLYRICS_IP_KEY = "catedralHolyricsServerIp";
+        const HOLYRICS_API_PORT = 4455;
+        const TOKEN = "A9DDQuW0b3CZhc5p";
+
+        function getHolyricsIp() {
+            const saved = (localStorage.getItem(HOLYRICS_IP_KEY) || '').trim();
+            return saved || DEFAULT_HOLYRICS_IP;
+        }
+
+        function getHolyricsApiBase() {
+            return 'http://' + getHolyricsIp() + ':' + HOLYRICS_API_PORT;
+        }
+
+        function aplicarEnderecoHolyricsNasTelas() {
+            const base = 'http://' + getHolyricsIp();
+            const atual = document.getElementById('atualContainer');
+            const texto = document.getElementById('textoContainer');
+            const proximo = document.getElementById('textoProximo');
+            if (atual) atual.src = base + '/stage-view/widescreen';
+            if (texto) texto.src = base + ':80/view/text2';
+            if (proximo) proximo.src = base + ':80/stage-view/text';
+        }
+
+        let modoTexto    = false;
+        let gavetaAberta = false;
+        let abaAtual     = 'letras';
+        let proximoVisivel = true;
+        let lastSlideNumber = null;
+
+        // Estado isolado da prévia de vídeo no campo Atual.
+        const OBS_VIDEO_CONFIG_KEY = 'catedralObsVideoConnection';
+        const OBS_VIDEO_CONFIG_VERSION_KEY = 'catedralObsVideoConfigVersion';
+        const OBS_VIDEO_CONFIG_VERSION = '2';
+        let videoPreviewUrl = '';
+        let videoPreviewPath = '';
+        let videoPreviewActive = false;
+        let videoPreviewErrorPath = '';
+        let videoTokenPromptDismissedPath = '';
+        let latestMediaPlayerInfo = null;
+
+        // Conexão persistente ao OBS WebSocket v5. Não interfere nas chamadas da API do Holyrics.
+        let obsWsSocket = null;
+        let obsWsConnectPromise = null;
+        let obsWsIdentified = false;
+        let obsWsResolvedInputName = '';
+        let obsWsNextRequestId = 1;
+        const obsWsPendingRequests = new Map();
+
+        // Diagnóstico apenas nesta cópia para o PC. Não muda as funções do app.
+        const videoDiagEntries = [];
+        let videoDiagLastSignature = '';
+        function videoDiag(stage, detail = {}) {
+            const entry = { hora: new Date().toLocaleTimeString(), etapa: stage, ...detail };
+            let signature = '';
+            try { signature = stage + JSON.stringify(detail); } catch (_) { signature = stage; }
+            if (signature === videoDiagLastSignature) {
+                const view = document.getElementById('videoDiagText');
+                if (view && videoDiagEntries.length) {
+                    videoDiagEntries[videoDiagEntries.length - 1].hora = entry.hora;
+                    view.textContent = videoDiagEntries.map(x => JSON.stringify(x)).join('\\n');
+                    view.scrollTop = view.scrollHeight;
+                }
+                return;
+            }
+            videoDiagLastSignature = signature;
+            videoDiagEntries.push(entry);
+            if (videoDiagEntries.length > 9) videoDiagEntries.shift();
+            const view = document.getElementById('videoDiagText');
+            if (view) {
+                view.textContent = videoDiagEntries.map(x => JSON.stringify(x)).join('\\n');
+                view.scrollTop = view.scrollHeight;
+            }
+            console.log('[VIDEO-DIAG]', entry);
+        }
+        function videoDiagSafeUrl(urlText) {
+            try {
+                const u = new URL(urlText);
+                return {
+                    origem: u.origin, caminho: u.pathname,
+                    arquivo: u.searchParams.get('path'),
+                    tokenPresente: !!u.searchParams.get('token')
+                };
+            } catch (_) {
+                return { urlValida: false, valor: String(urlText || '').slice(0, 120) };
+            }
+        }
+        function videoDiagMediaError(video) {
+            const err = video && video.error;
+            const errors = { 1: 'MEDIA_ERR_ABORTED', 2: 'MEDIA_ERR_NETWORK', 3: 'MEDIA_ERR_DECODE', 4: 'MEDIA_ERR_SRC_NOT_SUPPORTED' };
+            return {
+                errorCode: err ? err.code : 0,
+                error: err ? (errors[err.code] || 'erro desconhecido') : 'sem erro DOM',
+                networkState: video ? video.networkState : null,
+                readyState: video ? video.readyState : null,
+                paused: video ? video.paused : null,
+                currentTime: video ? video.currentTime : null
+            };
+        }
+
+        /* ── WAKE LOCK (mantém tela ligada) ── */
+        let wakeLock = null;
+        async function ativarWakeLock() {
+            if (!('wakeLock' in navigator)) {
+                console.log('Wake Lock não suportado neste navegador');
+                return;
+            }
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log('✅ Tela mantida ligada (Wake Lock ativo)');
+                wakeLock.addEventListener('release', () => {
+                    console.log('Wake Lock liberado (o sistema pode dormir se inativo)');
+                });
+            } catch (e) {
+                console.log('Não foi possível ativar Wake Lock:', e);
+            }
+        }
+        // Reativa o Wake Lock se o iPad voltar do lock ou troca de app
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && wakeLock === null) {
+                ativarWakeLock();
+            }
+        });
+        // Pede o primeiro Wake Lock no primeiro toque em qualquer lugar (regra do iOS)
+        document.addEventListener('click', () => {
+            if (wakeLock === null) ativarWakeLock();
+        }, { once: true });
+
+        const abas = {
+            letras: { items: [], idAtivo: null, carregada: false },
+            midia:  { items: [], idAtivo: null, carregada: false }
+        };
+
+        /* ── MODO TEXTO ── */
+        function toggleModo() {
+            modoTexto = !modoTexto;
+            document.body.classList.toggle('modo-texto-ativo', modoTexto);
+            document.getElementById('atualContainer').classList.toggle('hidden', modoTexto);
+            document.getElementById('textoContainer').classList.toggle('hidden', !modoTexto);
+            document.getElementById('nextSlide').classList.toggle('hidden', modoTexto);
+            document.getElementById('textoProximo').classList.toggle('hidden', !modoTexto);
+            document.getElementById('btnToggle').style.background = modoTexto ? '#0a0' : '#c00';
+        }
+
+        /* ── PAINEL PRÓXIMO (só no modo texto) ── */
+        function toggleProximo() {
+            mostrarProximo(!proximoVisivel);
+        }
+        function mostrarProximo(visivel) {
+            proximoVisivel = visivel;
+            document.getElementById('nextPanel').classList.toggle('hidden', !visivel);
+            const btn = document.getElementById('btnProximo');
+            btn.classList.toggle('oculto', !visivel);
+            btn.innerHTML = (visivel ? '🙈' : '👁️') + '<span class="label">Próximo</span>';
+        }
+
+        /* ── API ── */
+        async function api(action, body = {}) {
+            const r = await fetch(getHolyricsApiBase() + '/api/' + action + '?token=' + encodeURIComponent(TOKEN), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const json = await r.json();
+            if (action === 'GetMediaPlayerInfo') {
+                videoDiag('API_GetMediaPlayerInfo', {
+                    httpStatus: r.status, status: json && json.status,
+                    possuiData: !!(json && json.data),
+                    nome: json && json.data ? json.data.name : null,
+                    caminho: json && json.data ? json.data.path : null,
+                    caminhoRelativo: json && json.data ? json.data.relative_path : null,
+                    tocando: json && json.data ? json.data.playing : null,
+                    tempoMs: json && json.data ? json.data.time_ms : null,
+                    duracaoMs: json && json.data ? json.data.duration_ms : null
+                });
+            }
+            return json;
+        }
+
+        async function sendCmd(action) {
+            try {
+                await api(action);
+                if (!modoTexto) updateData();
+            } catch(e) { console.error(e); }
+        }
+
+        /* ── PRÉVIA DE VÍDEO (altera somente o campo Atual) ── */
+        function carregarConfigObsVideo() {
+            try {
+                const cfg = JSON.parse(localStorage.getItem(OBS_VIDEO_CONFIG_KEY) || 'null');
+                if (!cfg || !cfg.host || !cfg.port || !cfg.inputName) return null;
+                return cfg;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function abrirDialogoTokenVideo(message = '', configOverride = null) {
+            const overlay = document.getElementById('videoTokenOverlay');
+            const cfg = configOverride || carregarConfigObsVideo();
+            document.getElementById('obsWsHostInput').value =
+                (cfg && cfg.host) || getHolyricsIp();
+            document.getElementById('obsWsPortInput').value = (cfg && cfg.port) || '';
+            document.getElementById('obsWsPasswordInput').value = (cfg && cfg.password) || '';
+            document.getElementById('obsWsInputName').value =
+                (cfg && cfg.inputName) || 'VIDEO HOLYRICS';
+            document.getElementById('videoTokenFeedback').textContent = message;
+            overlay.classList.remove('hidden');
+            // Não abrir o teclado virtual automaticamente: em paisagem ele cobria
+            // os campos restantes antes de o usuário conseguir rolar o formulário.
+        }
+
+        function fecharDialogoTokenVideo() {
+            document.getElementById('videoTokenOverlay').classList.add('hidden');
+        }
+
+        function limparConexaoObsVideo() {
+            obsWsIdentified = false;
+            obsWsResolvedInputName = '';
+            if (obsWsSocket) {
+                try { obsWsSocket.close(); } catch (_) {}
+            }
+            obsWsSocket = null;
+            obsWsConnectPromise = null;
+            for (const [id, pending] of obsWsPendingRequests.entries()) {
+                clearTimeout(pending.timer);
+                pending.reject(new Error('Conexão OBS reiniciada.'));
+                obsWsPendingRequests.delete(id);
+            }
+        }
+
+        function bytesParaBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            return btoa(binary);
+        }
+
+        async function obsSha256Base64(value) {
+            if (!window.crypto || !window.crypto.subtle || !window.TextEncoder) {
+                throw new Error('Este dispositivo não disponibiliza os recursos de criptografia necessários para autenticar no OBS.');
+            }
+            const data = new TextEncoder().encode(value);
+            return bytesParaBase64(await window.crypto.subtle.digest('SHA-256', data));
+        }
+
+        async function conectarObsWebSocket() {
+            const cfg = carregarConfigObsVideo();
+            if (!cfg) throw new Error('Configure o endereço, a porta e a senha do OBS WebSocket.');
+            if (obsWsSocket && obsWsSocket.readyState === WebSocket.OPEN && obsWsIdentified) {
+                return obsWsSocket;
+            }
+            if (obsWsConnectPromise) return obsWsConnectPromise;
+
+            obsWsConnectPromise = new Promise((resolve, reject) => {
+                let settled = false;
+                let identifySent = false;
+                let socket;
+                const fail = (error) => {
+                    if (socket && obsWsSocket === socket) {
+                        obsWsSocket = null;
+                        obsWsIdentified = false;
+                    }
+                    if (socket) {
+                        for (const [id, pending] of obsWsPendingRequests.entries()) {
+                            if (pending.socket === socket) {
+                                clearTimeout(pending.timer);
+                                pending.reject(error);
+                                obsWsPendingRequests.delete(id);
+                            }
+                        }
+                    }
+                    if (!settled) {
+                        settled = true;
+                        clearTimeout(connectTimer);
+                        reject(error instanceof Error ? error : new Error(String(error)));
+                    }
+                    try { if (socket && socket.readyState < WebSocket.CLOSING) socket.close(); } catch (_) {}
+                };
+
+                const connectTimer = setTimeout(() => {
+                    fail(new Error('Tempo esgotado ao conectar ao OBS. Confira IP, porta e se o servidor WebSocket está ativado.'));
+                }, 8000);
+
+                try {
+                    socket = new WebSocket('ws://' + cfg.host + ':' + cfg.port);
+                    obsWsSocket = socket;
+                } catch (error) {
+                    fail(new Error('Não foi possível abrir a conexão WebSocket do OBS. Confira o endereço e a porta.'));
+                    return;
+                }
+
+                socket.onmessage = async (event) => {
+                    let message;
+                    try {
+                        message = JSON.parse(event.data);
+                    } catch (_) {
+                        return;
+                    }
+
+                    if (message.op === 0 && !identifySent) {
+                        try {
+                            const data = { rpcVersion: Number(message.d.rpcVersion) || 1, eventSubscriptions: 0 };
+                            if (message.d.authentication) {
+                                const auth = message.d.authentication;
+                                const secret = await obsSha256Base64(String(cfg.password || '') + auth.salt);
+                                data.authentication = await obsSha256Base64(secret + auth.challenge);
+                            }
+                            socket.send(JSON.stringify({ op: 1, d: data }));
+                            identifySent = true;
+                        } catch (error) {
+                            fail(error);
+                        }
+                        return;
+                    }
+
+                    if (message.op === 2) {
+                        obsWsIdentified = true;
+                        videoDiag('OBS_WebSocket_identificado', { host: cfg.host, porta: cfg.port });
+                        if (!settled) {
+                            settled = true;
+                            clearTimeout(connectTimer);
+                            resolve(socket);
+                        }
+                        return;
+                    }
+
+                    if (message.op === 7 && message.d) {
+                        const pending = obsWsPendingRequests.get(message.d.requestId);
+                        if (!pending || pending.socket !== socket) return;
+                        clearTimeout(pending.timer);
+                        obsWsPendingRequests.delete(message.d.requestId);
+                        const status = message.d.requestStatus || {};
+                        if (status.result) {
+                            const responseData = message.d.responseData || {};
+                            if (pending.requestType === 'GetInputSettings') {
+                                const set = responseData.inputSettings || {};
+                                const rawUrl = String(set.input || set.url || set.local_file || '');
+                                videoDiag('OBS_GetInputSettings', {
+                                    fonte: pending.inputName,
+                                    propriedades: Object.keys(set),
+                                    url: videoDiagSafeUrl(rawUrl),
+                                    tipoInput: responseData.inputKind || null
+                                });
+                            } else if (pending.requestType === 'GetInputList') {
+                                videoDiag('OBS_GetInputList', {
+                                    fontes: (responseData.inputs || []).map(x => x.inputName).slice(0, 25)
+                                });
+                            }
+                            pending.resolve(responseData);
+                        } else {
+                            videoDiag('OBS_request_falhou', {
+                                tipo: pending.requestType, fonte: pending.inputName,
+                                motivo: status.comment || 'OBS recusou a consulta'
+                            });
+                            pending.reject(new Error(status.comment || 'O OBS recusou a consulta da fonte.'));
+                        }
+                    }
+                };
+
+                socket.onerror = () => {
+                    videoDiag('OBS_WebSocket_erro', { host: cfg.host, porta: cfg.port });
+                    fail(new Error('Falha de conexão com o OBS WebSocket. Confira se o servidor está ativo e acessível na rede.'));
+                };
+
+                socket.onclose = () => {
+                    if (obsWsSocket === socket) {
+                        obsWsSocket = null;
+                        obsWsIdentified = false;
+                    }
+                    if (!settled) fail(new Error('O OBS encerrou a conexão WebSocket antes da autenticação.'));
+                    else {
+                        for (const [id, pending] of obsWsPendingRequests.entries()) {
+                            if (pending.socket === socket) {
+                                clearTimeout(pending.timer);
+                                pending.reject(new Error('A conexão WebSocket com o OBS foi encerrada.'));
+                                obsWsPendingRequests.delete(id);
+                            }
+                        }
+                    }
+                };
+            }).finally(() => {
+                obsWsConnectPromise = null;
+            });
+
+            return obsWsConnectPromise;
+        }
+
+        async function requisicaoObsWebSocket(requestType, requestData) {
+            const socket = await conectarObsWebSocket();
+            const requestId = 'catedral-preview-' + (obsWsNextRequestId++);
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    obsWsPendingRequests.delete(requestId);
+                    reject(new Error('O OBS não respondeu à consulta da fonte a tempo.'));
+                }, 7000);
+                obsWsPendingRequests.set(requestId, { resolve, reject, timer, socket, requestType, inputName: requestData && requestData.inputName });
+                try {
+                    socket.send(JSON.stringify({
+                        op: 6,
+                        d: {
+                            requestType: requestType,
+                            requestId: requestId,
+                            requestData: requestData || {}
+                        }
+                    }));
+                } catch (error) {
+                    clearTimeout(timer);
+                    obsWsPendingRequests.delete(requestId);
+                    reject(error);
+                }
+            });
+        }
+
+        async function resolverNomeFonteVideoObs(cfg) {
+            if (obsWsResolvedInputName &&
+                obsWsResolvedInputName.toLocaleLowerCase() === cfg.inputName.toLocaleLowerCase()) {
+                return obsWsResolvedInputName;
+            }
+
+            const result = await requisicaoObsWebSocket('GetInputList', {});
+            const inputs = Array.isArray(result.inputs) ? result.inputs : [];
+            const wanted = String(cfg.inputName || 'VIDEO HOLYRICS').trim().toLocaleLowerCase();
+            const match = inputs.find(item =>
+                String(item.inputName || '').trim().toLocaleLowerCase() === wanted
+            );
+            if (!match) {
+                const available = inputs.map(item => item.inputName).filter(Boolean).slice(0, 16).join(', ');
+                throw new Error('Não encontrei a fonte "' + cfg.inputName + '" no OBS. Confira o nome exato. Fontes encontradas: ' + (available || 'nenhuma fonte listada') + '.');
+            }
+            obsWsResolvedInputName = match.inputName;
+            return match.inputName;
+        }
+
+        async function validarConexaoObsVideo(cfg) {
+            const inputName = await resolverNomeFonteVideoObs(cfg);
+            const result = await requisicaoObsWebSocket('GetInputSettings', { inputName: inputName });
+            if (!result || !result.inputSettings) {
+                throw new Error('O OBS respondeu, mas não retornou as configurações da fonte "' + inputName + '".');
+            }
+            return result;
+        }
+
+        async function obterUrlFonteVideoObs() {
+            const cfg = carregarConfigObsVideo();
+            if (!cfg) throw new Error('Configure a conexão com o OBS WebSocket para habilitar a prévia.');
+            const inputName = await resolverNomeFonteVideoObs(cfg);
+            const result = await requisicaoObsWebSocket('GetInputSettings', { inputName: inputName });
+            let rawUrl = String(
+                (result.inputSettings && (result.inputSettings.input || result.inputSettings.url)) ||
+                result.input || result.url || ''
+            ).trim();
+
+            // Retira somente aspas que eventualmente tenham sido armazenadas literalmente na configuração.
+            rawUrl = rawUrl.replace(/^["']/, '').replace(/["']$/, '').trim();
+            let url;
+            try {
+                url = new URL(rawUrl);
+            } catch (_) {
+                throw new Error('A fonte "' + cfg.inputName + '" não retornou uma URL válida.');
+            }
+            if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+                throw new Error('A fonte "' + cfg.inputName + '" não está usando uma URL HTTP.');
+            }
+            if (!/\/get_video\/?$/i.test(url.pathname)) {
+                throw new Error('A fonte "' + cfg.inputName + '" ainda não contém um endereço /get_video. Inicie um vídeo aceito pelo módulo Video Sync OBS+ e tente novamente.');
+            }
+
+            // "localhost" funciona no computador do OBS, mas não no tablet.
+            // Nesse caso usamos o endereço da máquina já configurada para a API do Holyrics.
+            if (url.hostname.toLowerCase() === 'localhost' ||
+                url.hostname === '127.0.0.1' || url.hostname === '::1') {
+                url.hostname = getHolyricsIp();
+            }
+            return url.toString();
+        }
+
+        function nomeBaseVideo(path) {
+            let value = String(path || '').replace(/\\/g, '/').split('/').pop().trim();
+            try { value = decodeURIComponent(value); } catch (_) {}
+            try { value = value.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
+            return value.toLocaleLowerCase();
+        }
+
+        function urlCorrespondeAoVideo(urlText, mediaPath) {
+            try {
+                const url = new URL(urlText);
+                const streamPath = url.searchParams.get('path') || '';
+                const streamName = nomeBaseVideo(streamPath);
+                const currentName = nomeBaseVideo(mediaPath);
+                return !!streamName && !!currentName && streamName === currentName;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        async function salvarTokenVideo() {
+            const host = document.getElementById('obsWsHostInput').value.trim()
+                .replace(/^wss?:\/\//i, '').replace(/\/+$/, '');
+            const portText = document.getElementById('obsWsPortInput').value.trim();
+            const port = Number(portText);
+            const password = document.getElementById('obsWsPasswordInput').value;
+            const inputName = document.getElementById('obsWsInputName').value.trim() || 'VIDEO HOLYRICS';
+            const feedback = document.getElementById('videoTokenFeedback');
+
+            if (!host || /[\/?#\s]/.test(host)) {
+                feedback.textContent = 'Informe somente o IP ou nome do computador que executa o OBS.';
+                return;
+            }
+            if (!portText || !Number.isInteger(port) || port < 1 || port > 65535) {
+                feedback.textContent = 'Informe a porta configurada em Ferramentas → Configurações do WebSocket do OBS.';
+                return;
+            }
+            if (!inputName) {
+                feedback.textContent = 'Informe o nome exato da fonte de vídeo do OBS.';
+                return;
+            }
+
+            const cfg = { host: host, port: port, password: password, inputName: inputName };
+            localStorage.setItem(OBS_VIDEO_CONFIG_KEY, JSON.stringify(cfg));
+            limparConexaoObsVideo();
+            feedback.textContent = 'Testando a conexão com o OBS...';
+            try {
+                // Primeiro valida a autenticação e a existência da fonte.
+                // Não exige que ela já contenha uma URL /get_video neste instante:
+                // o módulo Video Sync OBS+ atualiza a URL quando o vídeo começa.
+                await validarConexaoObsVideo(cfg);
+                localStorage.setItem(OBS_VIDEO_CONFIG_KEY, JSON.stringify(cfg));
+                localStorage.setItem(OBS_VIDEO_CONFIG_VERSION_KEY, OBS_VIDEO_CONFIG_VERSION);
+                videoPreviewUrl = '';
+                videoPreviewErrorPath = '';
+                videoTokenPromptDismissedPath = '';
+                fecharDialogoTokenVideo();
+                atualizarPreviaVideo();
+                console.log('Prévia Catedral: conexão OBS validada; fonte de vídeo encontrada.');
+            } catch (error) {
+                // Não deixar uma configuração inválida marcada como salva:
+                // isso impedia a janela de reaparecer na próxima abertura do app.
+                localStorage.removeItem(OBS_VIDEO_CONFIG_KEY);
+                localStorage.removeItem(OBS_VIDEO_CONFIG_VERSION_KEY);
+                limparConexaoObsVideo();
+                feedback.textContent = error && error.message
+                    ? error.message
+                    : 'Não foi possível consultar a fonte do OBS. Confira a configuração e tente novamente.';
+            }
+        }
+
+        document.getElementById('btnSalvarVideoToken').addEventListener('click', salvarTokenVideo);
+        document.getElementById('btnCancelarVideoToken').addEventListener('click', () => {
+            videoTokenPromptDismissedPath = videoPreviewPath;
+            fecharDialogoTokenVideo();
+        });
+
+        function caminhoVideoAtual(info) {
+            let path = String(info.relative_path || info.name || '').trim();
+            // A API pode incluir o diretório "video" na frente do caminho relativo.
+            path = path.replace(/^video[\\/]/i, '');
+            if (!path && info.path) {
+                const fullPath = String(info.path);
+                const marker = '\\media\\video\\';
+                const index = fullPath.toLowerCase().lastIndexOf(marker);
+                path = index >= 0 ? fullPath.slice(index + marker.length) : fullPath.split(/[\\/]/).pop();
+            }
+            return path.replace(/\\/g, '/');
+        }
+
+        function pareceVideo(info) {
+            const path = String(info.relative_path || info.name || info.path || '');
+            return /\.(mp4|m4v|mov|webm|mkv|avi|mpg|mpeg|3gp)$/i.test(path);
+        }
+
+        function mostrarVideoAtual() {
+            if (modoTexto) return;
+            videoPreviewActive = true;
+            document.getElementById('atualContainer').classList.add('hidden');
+            document.getElementById('videoAtual').classList.remove('hidden');
+        }
+
+        function restaurarAtualHolyrics() {
+            videoPreviewActive = false;
+            const video = document.getElementById('videoAtual');
+            video.classList.add('hidden');
+            video.pause();
+            document.getElementById('atualContainer').classList.toggle('hidden', modoTexto);
+        }
+
+        function sincronizarTempoVideo(info) {
+            const video = document.getElementById('videoAtual');
+            const currentMs = Number(info.time_ms);
+            if (video.readyState >= 1 && Number.isFinite(currentMs) && currentMs >= 0) {
+                const wanted = currentMs / 1000;
+                if (Math.abs(video.currentTime - wanted) > 1.25) {
+                    try { video.currentTime = wanted; } catch (_) {}
+                }
+            }
+            if (info.playing === true) {
+                if (video.paused) video.play().catch(() => {});
+            } else if (!video.paused) {
+                video.pause();
+            }
+        }
+
+        async function atualizarPreviaVideo() {
+            try {
+                videoDiag('Preview_loop', { ipHolyrics: getHolyricsIp(), modoTexto: modoTexto, configObsSalva: !!carregarConfigObsVideo() });
+                const result = await api('GetMediaPlayerInfo');
+                if (!result || result.status !== 'ok' || !result.data) {
+                    videoDiag('API_sem_dados', { status: result && result.status, erro: result && result.error });
+                    return;
+                }
+
+                const info = result.data;
+                latestMediaPlayerInfo = info;
+                const duration = Number(info.duration_ms);
+                const elapsed = Number(info.time_ms);
+                const mediaPath = caminhoVideoAtual(info);
+                const parece = pareceVideo(info);
+                const active = parece &&
+                    (info.playing === true ||
+                     (Number.isFinite(duration) && duration > 0 &&
+                      Number.isFinite(elapsed) && elapsed >= 0 && elapsed < duration));
+                videoDiag('Video_detection', {
+                    nome: info.name || null, path: info.path || null, relative_path: info.relative_path || null,
+                    mediaPath: mediaPath, pareceVideo: parece, active: active, tocando: info.playing,
+                    tempoMs: elapsed, duracaoMs: duration, modoTexto: modoTexto
+                });
+
+                if (!active || !mediaPath) {
+                    if (videoPreviewUrl || videoPreviewActive) {
+                        restaurarAtualHolyrics();
+                        const video = document.getElementById('videoAtual');
+                        video.removeAttribute('src');
+                        video.load();
+                        videoPreviewUrl = '';
+                        videoPreviewPath = '';
+                        videoPreviewErrorPath = '';
+                    }
+                    return;
+                }
+
+                if (mediaPath !== videoPreviewPath) {
+                    videoPreviewPath = mediaPath;
+                    videoPreviewErrorPath = '';
+                    videoTokenPromptDismissedPath = '';
+                }
+
+                if (modoTexto) return;
+
+                if (!carregarConfigObsVideo()) {
+                    videoDiag('OBS_config_ausente', {});
+                    restaurarAtualHolyrics();
+                    if (videoTokenPromptDismissedPath !== mediaPath) {
+                        abrirDialogoTokenVideo();
+                    }
+                    return;
+                }
+
+                if (videoPreviewErrorPath === mediaPath) return;
+
+                let streamUrl;
+                try {
+                    videoDiag('OBS_consultando_URL', { mediaPath: mediaPath });
+                    streamUrl = await obterUrlFonteVideoObs();
+                    videoDiag('URL_recebida', videoDiagSafeUrl(streamUrl));
+                } catch (error) {
+                    videoDiag('ERRO_OBS_URL', { mensagem: error && error.message ? error.message : String(error) });
+                    restaurarAtualHolyrics();
+                    videoPreviewErrorPath = mediaPath;
+                    abrirDialogoTokenVideo(
+                        (error && error.message ? error.message : 'Não foi possível consultar a fonte do OBS.') +
+                        ' Confira a configuração do WebSocket e toque em “Testar e salvar”.'
+                    );
+                    return;
+                }
+
+                // A URL do módulo é a fonte confiável e já inclui o token necessário.
+                // Não bloqueie a reprodução por diferenças de caminho entre o nome retornado
+                // pela API do Holyrics e o caminho usado pelo plugin em /get_video.
+                // O módulo atualiza a URL da fonte a cada vídeo elegível.
+                console.log('Prévia Catedral: URL de vídeo recebida do OBS.', {
+                    mediaPath: mediaPath,
+                    streamUrl: streamUrl
+                });
+
+                const video = document.getElementById('videoAtual');
+                if (streamUrl !== videoPreviewUrl) {
+                    videoPreviewUrl = streamUrl;
+                    video.pause();
+                    video.onerror = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        videoDiag('VIDEO_ERROR', { ...videoDiagSafeUrl(streamUrl), ...videoDiagMediaError(video) });
+                        videoPreviewErrorPath = mediaPath;
+                        restaurarAtualHolyrics();
+                        abrirDialogoTokenVideo('A URL veio do OBS, mas o tablet não conseguiu reproduzir o fluxo de vídeo. Confira se o IP exibido na URL é acessível pelo tablet.');
+                    };
+                    video.onloadedmetadata = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        videoDiag('VIDEO_loadedmetadata', { ...videoDiagSafeUrl(streamUrl), ...videoDiagMediaError(video), duration: video.duration });
+                        sincronizarTempoVideo(latestMediaPlayerInfo || info);
+                    };
+                    video.oncanplay = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        videoDiag('VIDEO_canplay', { ...videoDiagSafeUrl(streamUrl), ...videoDiagMediaError(video), duration: video.duration });
+                        sincronizarTempoVideo(latestMediaPlayerInfo || info);
+                        mostrarVideoAtual();
+                    };
+                    video.onplaying = () => videoDiag('VIDEO_playing', { ...videoDiagSafeUrl(streamUrl), ...videoDiagMediaError(video) });
+                    video.onwaiting = () => videoDiag('VIDEO_waiting', { ...videoDiagSafeUrl(streamUrl), ...videoDiagMediaError(video) });
+                    video.onstalled = () => videoDiag('VIDEO_stalled', { ...videoDiagSafeUrl(streamUrl), ...videoDiagMediaError(video) });
+                    video.src = streamUrl;
+                    video.load();
+                } else {
+                    sincronizarTempoVideo(info);
+                    if (video.readyState >= 2) mostrarVideoAtual();
+                }
+            } catch (error) {
+                videoDiag('ERRO_no_loop_preview', {
+                    mensagem: error && error.message ? error.message : String(error),
+                    stack: error && error.stack ? error.stack.slice(0, 240) : null
+                });
+                console.warn('Não foi possível consultar a prévia de vídeo:', error);
+            } finally {
+                setTimeout(atualizarPreviaVideo, 1000);
+            }
+        }
+
+        /* ── LOOP DE SLIDE ── */
+        async function updateData() {
+            if (modoTexto) { setTimeout(updateData, 2000); return; }
+            try {
+                const j = await api('GetCurrentPresentation', {
+                    include_slides: true,
+                    include_slide_preview: true
+                });
+                if (j.status === 'ok' && j.data) {
+                    const atual = Number(j.data.slide_number);
+                    // Só recarrega o iframe quando o slide MUDA (evita reiniciar o vídeo a cada 2s)
+                    if (atual !== lastSlideNumber) {
+                        lastSlideNumber = atual;
+                        document.getElementById('atualContainer').src = 'http://' + getHolyricsIp() + '/stage-view/widescreen?_=' + Date.now();
+                    }
+                    if (j.data.slides && j.data.slides[atual]) {
+                        document.getElementById('nextSlide').src =
+                            'data:image/jpeg;base64,' + j.data.slides[atual].preview;
+                    }
+                }
+            } catch(e) { /* silencioso */ }
+            setTimeout(updateData, 2000);
+        }
+
+        /* ── GAVETA ── */
+        function toggleGaveta() {
+            gavetaAberta ? fecharGaveta() : abrirGaveta();
+        }
+        function abrirGaveta() {
+            gavetaAberta = true;
+            document.getElementById('gaveta').classList.add('aberta');
+            document.getElementById('btnPlaylist').classList.add('ativo');
+            if (!abas[abaAtual].carregada) carregarAba(abaAtual);
+        }
+        function fecharGaveta() {
+            gavetaAberta = false;
+            document.getElementById('gaveta').classList.remove('aberta');
+            document.getElementById('btnPlaylist').classList.remove('ativo');
+        }
+        function trocarAba(aba) {
+            if (aba === abaAtual) return;
+            abaAtual = aba;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('ativa'));
+            document.getElementById('tab-' + aba).classList.add('ativa');
+            document.getElementById('painel-letras').classList.toggle('hidden', aba !== 'letras');
+            document.getElementById('painel-midia').classList.toggle('hidden',  aba !== 'midia');
+            if (!abas[aba].carregada) carregarAba(aba);
+        }
+        function carregarAbaAtual() {
+            abas[abaAtual].carregada = false;
+            carregarAba(abaAtual);
+        }
+
+        /* ── CARREGAMENTO ── */
+        async function carregarAba(aba) {
+            const statusEl = document.getElementById('status-' + aba);
+            const listaEl  = document.getElementById('lista-'  + aba);
+            statusEl.innerHTML = '<span class="spinner"></span> Carregando…';
+            listaEl.innerHTML  = '';
+            try {
+                const endpoint = aba === 'letras' ? 'GetLyricsPlaylist' : 'GetMediaPlaylist';
+                const j = await api(endpoint);
+                if (j.status !== 'ok' || !Array.isArray(j.data)) {
+                    statusEl.textContent = '⚠️ Lista vazia ou não disponível.';
+                    return;
+                }
+                abas[aba].items    = j.data;
+                abas[aba].carregada = true;
+                statusEl.innerHTML = '';
+                renderAba(aba);
+            } catch(e) {
+                statusEl.textContent = '❌ Erro ao conectar ao Holyrics.';
+            }
+        }
+
+        /* ── RENDER ── */
+        const ICONES = {
+            title: '▬', song: '🎵', verse: '📖', text: '📝',
+            audio: '🔊', video: '🎬', image: '🖼️', file: '📄',
+            announcement: '📢', automatic_presentation: '▶',
+            countdown: '⏱️', countdown_cp: '⏱️', cp_text: '📝',
+            plain_text: '📝', uri: '🔗', global_action: '⚙️',
+            api: '⚡', script: '💻',
+        };
+
+        function nomeArquivo(path) {
+            if (!path) return '—';
+            return path.split(/[/\\]/).pop();
+        }
+
+        function renderAba(aba) {
+            const lista  = document.getElementById('lista-' + aba);
+            const estado = abas[aba];
+            lista.innerHTML = '';
+
+            if (!estado.items.length) {
+                lista.innerHTML = '<div style="padding:20px;text-align:center;color:#555">Lista vazia</div>';
+                return;
+            }
+
+            estado.items.forEach(item => {
+                const tipo     = item.type || 'file';
+                const nome     = item.title || nomeArquivo(item.name);
+                const artista  = item.artist || '';
+                const esTitulo = tipo === 'title';
+                const ativo    = item.id && item.id === estado.idAtivo;
+
+                const div = document.createElement('div');
+                div.className = 'playlist-item' +
+                    (esTitulo ? ' titulo-secao' : '') +
+                    (ativo    ? ' ativo'         : '');
+
+                if (!esTitulo) {
+                    div.title = nome + (artista ? ' — ' + artista : '');
+                    div.addEventListener('click', () => acionarItem(aba, item.id));
+                }
+
+                const iconeEl = document.createElement('span');
+                iconeEl.className   = 'item-icone';
+                iconeEl.textContent = ICONES[tipo] || (aba === 'letras' ? '🎵' : '📄');
+
+                const infoEl = document.createElement('div');
+                infoEl.className = 'item-info';
+
+                const nomeEl = document.createElement('div');
+                nomeEl.className   = 'item-nome';
+                nomeEl.textContent = nome;
+                infoEl.appendChild(nomeEl);
+
+                if (artista && !esTitulo) {
+                    const artistaEl = document.createElement('div');
+                    artistaEl.className   = 'item-artista';
+                    artistaEl.textContent = artista;
+                    infoEl.appendChild(artistaEl);
+                }
+
+                div.appendChild(iconeEl);
+                div.appendChild(infoEl);
+
+                if (!esTitulo) {
+                    const tipoEl = document.createElement('span');
+                    tipoEl.className   = 'item-tipo';
+                    tipoEl.textContent = tipo !== 'song' ? tipo : '';
+                    div.appendChild(tipoEl);
+
+                    if (ativo) {
+                        const badge = document.createElement('span');
+                        badge.className   = 'badge-ativo';
+                        badge.textContent = '▶';
+                        div.appendChild(badge);
+                    }
+                }
+
+                lista.appendChild(div);
+            });
+        }
+
+        /* ── ACIONAR ITEM ── */
+        async function acionarItem(aba, id) {
+            if (!id) return;
+            try {
+                const endpoint = aba === 'letras' ? 'ShowLyrics' : 'MediaPlaylistAction';
+                const j = await api(endpoint, { id });
+                if (j.status === 'ok') {
+                    abas[aba].idAtivo = id;
+                    renderAba(aba);
+                    const el = document.querySelector('.playlist-item.ativo');
+                    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            } catch(e) {
+                console.error('Erro ao acionar item:', e);
+            }
+        }
+
+        /* ── Inicialização e recuperação de IP do Holyrics ── */
+        // Alguns servidores Holyrics respondem ao GetMediaPlayerInfo mesmo quando
+        // GetCurrentPresentation retorna erro; qualquer endpoint conhecido que responda
+        // corretamente confirma a conexão para evitar falsos alertas de IP.
+        async function testarConexaoHolyrics() {
+            try {
+                const apresentacao = await api('GetCurrentPresentation', {});
+                if (apresentacao && apresentacao.status === 'ok') return true;
+            } catch (_) {}
+
+            try {
+                const player = await api('GetMediaPlayerInfo', {});
+                if (player && player.status === 'ok' && player.data) return true;
+            } catch (_) {}
+
+            return false;
+        }
+
+        async function iniciarAplicativo() {
+            videoDiag('APP_iniciando', {
+                location: window.location.href, userAgent: navigator.userAgent, ipPadrao: getHolyricsIp()
+            });
+            aplicarEnderecoHolyricsNasTelas();
+            let conexaoHolyricsConfirmada = await testarConexaoHolyrics();
+
+            if (!conexaoHolyricsConfirmada) {
+                const atual = getHolyricsIp();
+                const resposta = prompt(
+                    'Não consegui confirmar a conexão com o Holyrics no endereço ' + atual + '.\n\n' +
+                    'Digite o IP atual do computador onde o Holyrics está aberto.',
+                    atual
+                );
+
+                if (resposta !== null && resposta.trim()) {
+                    const novoIp = resposta.trim()
+                        .replace(/^https?:\/\//i, '')
+                        .replace(/\/+$/, '')
+                        .replace(/:\d+$/, '');
+
+                    if (!novoIp || /[\s/?#]/.test(novoIp)) {
+                        alert('Endereço inválido. Digite somente o IP ou nome do computador.');
+                    } else {
+                        localStorage.setItem(HOLYRICS_IP_KEY, novoIp);
+                        aplicarEnderecoHolyricsNasTelas();
+                        limparConexaoObsVideo();
+                        conexaoHolyricsConfirmada = await testarConexaoHolyrics();
+
+                        if (!conexaoHolyricsConfirmada) {
+                            alert('Não consegui confirmar uma resposta válida da API do Holyrics em ' + novoIp +
+                                '. A prévia do OBS será configurada separadamente.');
+                        }
+                    }
+                }
+                aplicarEnderecoHolyricsNasTelas();
+            }
+
+            // A configuração do OBS não depende da validação do endpoint de apresentação
+            // do Holyrics. Configurações antigas são reapresentadas uma vez para confirmar
+            // os dados e corrigir versões que os salvaram sem validação completa.
+            const cfgObs = carregarConfigObsVideo();
+            const versaoCfgObs = localStorage.getItem(OBS_VIDEO_CONFIG_VERSION_KEY);
+
+            if (!cfgObs || versaoCfgObs !== OBS_VIDEO_CONFIG_VERSION) {
+                abrirDialogoTokenVideo(
+                    cfgObs
+                        ? 'Confirme e teste a configuração do OBS WebSocket nesta versão para ativar a prévia.'
+                        : 'Configure o OBS WebSocket para ativar a prévia de vídeo. Isso é separado da conexão do Holyrics.',
+                    cfgObs
+                );
+            } else {
+                try {
+                    await validarConexaoObsVideo(cfgObs);
+                } catch (erroObs) {
+                    localStorage.removeItem(OBS_VIDEO_CONFIG_KEY);
+                    localStorage.removeItem(OBS_VIDEO_CONFIG_VERSION_KEY);
+                    limparConexaoObsVideo();
+                    abrirDialogoTokenVideo(
+                        'A configuração anterior do OBS não foi validada. Confira os dados e teste novamente. ' +
+                        (erroObs && erroObs.message ? erroObs.message : ''),
+                        cfgObs
+                    );
+                }
+            }
+
+            updateData();
+            atualizarPreviaVideo();
+        }
+
+        iniciarAplicativo();
+    </script>
+</body>
+</html>
