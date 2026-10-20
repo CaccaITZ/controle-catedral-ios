@@ -76,8 +76,12 @@ function Read-HttpRequest($stream) {
     $length = 0
     if ($headers.ContainsKey('content-length')) { [void][int]::TryParse($headers['content-length'], [ref]$length) }
     if ($length -lt 0 -or $length -gt 1048576) { throw 'Corpo HTTP acima do limite permitido.' }
-    $bodyBytes = Read-ExactBytes $stream $length
-    $body = [System.Text.Encoding]::UTF8.GetString($bodyBytes)
+    if ($length -eq 0) {
+        $body = ''
+    } else {
+        $bodyBytes = Read-ExactBytes $stream $length
+        $body = [System.Text.Encoding]::UTF8.GetString([byte[]]$bodyBytes)
+    }
     $uri = [System.Uri]::new(('http://127.0.0.1' + $first[1]))
     return [pscustomobject]@{
         Method = $first[0].ToUpperInvariant()
