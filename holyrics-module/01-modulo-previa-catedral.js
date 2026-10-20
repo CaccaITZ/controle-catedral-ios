@@ -17,6 +17,10 @@ function info() {
     id: CATEDRAL_VIDEO_PREVIEW_MODULE_ID,
     name: "Prévia de Vídeo — Envio ao Controle Catedral",
     description: "Envia diretamente ao Controle Catedral a URL autenticada do vídeo exibido no Holyrics. Não depende do OBS.",
+    // Permite a requisição direta ao receptor no PC do OBS durante este teste.
+    allowed_requests: [
+      "http://192.168.10.61:8766/api/video-preview"
+    ],
     min_version: "2.24.0",
     available_in_main_window: true,
     available_in_bible_window: false
@@ -99,7 +103,8 @@ function enviarUrlAoAplicativo(module, payload) {
   var endpoint = "http://" + receiverIp + ":" + receiverPort + "/api/video-preview";
 
   try {
-    var response = h.httpRequest(endpoint, {
+    // A API documentada do Holyrics para requisições diretas é module.apiRequest.
+    var response = module.apiRequest(endpoint, {
       type: "POST",
       headers: { "Content-Type": "application/json" },
       data: JSON.stringify(payload),
@@ -107,10 +112,21 @@ function enviarUrlAoAplicativo(module, payload) {
       response_data_type: "string;utf-8"
     });
 
+    if (response == null) {
+      var requestError = module.getApiRequestLastError();
+      if (module.settings.log) {
+        h.log(CATEDRAL_VIDEO_PREVIEW_MODULE_ID,
+          "Falha ao enviar URL ao Controle Catedral: " +
+          String(requestError || "A requisição retornou null.") +
+          " | endpoint: " + endpoint);
+      }
+      return false;
+    }
+
     if (module.settings.log) {
       h.log(CATEDRAL_VIDEO_PREVIEW_MODULE_ID,
         "URL do vídeo enviada ao Controle Catedral: " + payload.name +
-        " | resposta: " + String(response == null ? "" : response).substring(0, 180));
+        " | resposta: " + String(response).substring(0, 180));
     }
     return true;
   } catch (e) {
