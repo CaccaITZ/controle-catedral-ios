@@ -31,9 +31,6 @@ jobs:
       - name: Adicionar plataforma Android
         run: npx cap add android
 
-      - name: Registrar receptor HTTP nativo para a prévia
-        run: python3 tools/configure_android_video_preview.py
-
       - name: Permitir HTTP local e fixar orientação horizontal
         run: |
           python3 - <<'PY'
