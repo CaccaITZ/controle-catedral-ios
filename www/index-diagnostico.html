@@ -644,7 +644,10 @@
 
         /* ── API ── */
         async function api(action, body = {}) {
-            const r = await fetch(getHolyricsApiBase() + '/api/' + action + '?token=' + encodeURIComponent(TOKEN), {
+            const host = getHolyricsIp();
+            const proxyUrl = '/__proxy/api/' + encodeURIComponent(action) +
+                '?host=' + encodeURIComponent(host) + '&token=' + encodeURIComponent(TOKEN);
+            const r = await fetch(proxyUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
