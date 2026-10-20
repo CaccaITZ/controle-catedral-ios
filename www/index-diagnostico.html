@@ -656,6 +656,8 @@
             if (action === 'GetMediaPlayerInfo') {
                 videoDiag('API_GetMediaPlayerInfo', {
                     httpStatus: r.status, status: json && json.status,
+                    erro: json && json.error ? json.error : null,
+                    detalhes: json && json.details ? json.details : null,
                     possuiData: !!(json && json.data),
                     nome: json && json.data ? json.data.name : null,
                     caminho: json && json.data ? json.data.path : null,
