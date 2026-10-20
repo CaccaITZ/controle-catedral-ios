@@ -189,7 +189,9 @@ public class VideoPreviewServerPlugin: CAPPlugin, CAPBridgedPlugin {
         for (key, value) in payload {
             eventData[key] = value
         }
-        notifyListeners("videoPreviewReceived", data: eventData)
+        DispatchQueue.main.async {
+            self.notifyListeners("videoPreviewReceived", data: eventData)
+        }
         sendResponse(connection, status: 200, reason: "OK",
                      body: "{\"status\":\"ok\",\"received\":true}")
     }
