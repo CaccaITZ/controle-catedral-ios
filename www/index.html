@@ -480,8 +480,8 @@
         let proximoVisivel = true;
         let lastSlideNumber = null;
 
-        // Prévia de vídeo recebida por POST direto do módulo do Holyrics.
-        // A conexão com o OBS não participa deste fluxo.
+        // O módulo envia a URL para um receptor local no PC do Holyrics.
+        // O app consulta esse PC pelo IP configurado; o IP do aparelho é irrelevante.
         const VIDEO_PREVIEW_RECEIVER_PORT = 8766;
         const VIDEO_PREVIEW_PC_POLL_MS = 350;
         let videoPreviewUrl = '';
@@ -677,46 +677,29 @@
             video.play().catch(() => {});
         }
 
-        async function consultarUltimaPreviaPC() {
+        async function consultarUltimaPreviaHolyrics() {
             try {
-                const response = await fetch('/__receiver/video-preview/latest', { cache: 'no-store' });
+                const endpoint = 'http://' + getHolyricsIp() + ':' +
+                    VIDEO_PREVIEW_RECEIVER_PORT + '/__receiver/video-preview/latest';
+                const response = await fetch(endpoint, { cache: 'no-store' });
                 if (!response.ok) return;
                 const payload = await response.json();
-                if (payload && payload.available && payload.url) {
+                if (payload && (payload.available === false || payload.url)) {
                     receberUrlVideoModulo(payload);
                 }
             } catch (_) {
-                // O endpoint existe apenas no servidor local de teste para PC.
+                // O receptor do PC do Holyrics pode estar indisponível; as demais funções continuam funcionando.
             }
         }
 
         async function iniciarReceptorPreviaVideo() {
-            const capacitor = window.Capacitor;
-            const plugin = capacitor && capacitor.Plugins && capacitor.Plugins.VideoPreviewServer;
-
-            if (plugin) {
-                videoPreviewReceiverPlugin = plugin;
-                try {
-                    await plugin.addListener('videoPreviewReceived', function (payload) {
-                        receberUrlVideoModulo(payload);
-                    });
-                    const info = await plugin.start({ port: VIDEO_PREVIEW_RECEIVER_PORT });
-                    console.info('Receptor da prévia ativo:', info);
-                    if (info && info.lastPayload) receberUrlVideoModulo(info.lastPayload);
-                    return;
-                } catch (error) {
-                    console.error('Não foi possível iniciar o receptor nativo da prévia:', error);
-                }
-            }
-
-            // Modo PC: o servidor PowerShell local simula o endpoint nativo.
-            if (String(window.location.port) === String(VIDEO_PREVIEW_RECEIVER_PORT)) {
-                await consultarUltimaPreviaPC();
-                if (videoPreviewReceiverTimer) clearInterval(videoPreviewReceiverTimer);
-                videoPreviewReceiverTimer = setInterval(consultarUltimaPreviaPC, VIDEO_PREVIEW_PC_POLL_MS);
-            } else {
-                console.warn('Receptor HTTP da prévia não encontrado. Esta versão precisa do receptor nativo ou do servidor local de teste.');
-            }
+            // O app consulta o PC do Holyrics. Nenhum IP do tablet/celular precisa ser configurado.
+            await consultarUltimaPreviaHolyrics();
+            if (videoPreviewReceiverTimer) clearInterval(videoPreviewReceiverTimer);
+            videoPreviewReceiverTimer = setInterval(
+                consultarUltimaPreviaHolyrics,
+                VIDEO_PREVIEW_PC_POLL_MS
+            );
         }
 
         function caminhoVideoAtual(info) {
