@@ -2,12 +2,10 @@
  * Prévia de Vídeo — Catedral (envio direto ao aplicativo)
  * Holyrics 2.24+
  *
- * Ao exibir um vídeo, calcula a mesma URL autenticada usada pelo módulo
- * Video Sync OBS+ e faz POST diretamente ao receptor do Controle Catedral.
+ * Ao exibir um vídeo, calcula a URL autenticada e publica no receptor local
+ * do PC que executa o Holyrics. O aplicativo consulta essa URL usando o IP
+ * do PC do Holyrics informado pelo usuário; o IP do tablet/celular não importa.
  * Não consulta nem controla o OBS.
- *
- * Para o teste no PC, configure o IP 127.0.0.1 e a porta 8766.
- * No aparelho, configure o IP local do celular/tablet e a porta 8766.
  */
 
 var CATEDRAL_VIDEO_PREVIEW_MODULE_ID = "catedral_video_preview_push";
@@ -17,9 +15,9 @@ function info() {
     id: CATEDRAL_VIDEO_PREVIEW_MODULE_ID,
     name: "Prévia de Vídeo — Envio ao Controle Catedral",
     description: "Envia diretamente ao Controle Catedral a URL autenticada do vídeo exibido no Holyrics. Não depende do OBS.",
-    // Permite a requisição direta ao receptor no PC do OBS durante este teste.
+    // A URL é enviada ao serviço local no mesmo PC que executa o Holyrics.
     allowed_requests: [
-      "http://192.168.10.61:8766/api/video-preview"
+      "http://127.0.0.1:8766/api/video-preview"
     ],
     min_version: "2.24.0",
     available_in_main_window: true,
@@ -34,18 +32,8 @@ function settings() {
       name: "Envie a URL do vídeo diretamente ao aplicativo. Não é necessário usar o OBS para esta função."
     },
     {
-      id: "app_ip",
-      name: "IP do dispositivo Controle Catedral",
-      type: "string",
-      default_value: "127.0.0.1"
-    },
-    {
-      id: "app_port",
-      name: "Porta receptora HTTP",
-      type: "number",
-      min: 1024,
-      max: 65535,
-      default_value: 8766
+      type: "label",
+      name: "A URL é enviada ao serviço local deste PC. No aplicativo, informe apenas o IP deste computador."
     },
     {
       id: "log",
@@ -91,16 +79,8 @@ function createCatedralVideoUrl(settings, fullPath) {
 }
 
 function enviarUrlAoAplicativo(module, payload) {
-  var receiverIp = String(module.settings.app_ip || "").trim();
-  var receiverPort = Number(module.settings.app_port || 8766);
-
-  if (!receiverIp || /[\s/?#]/.test(receiverIp) ||
-      !isFinite(receiverPort) || receiverPort < 1024 || receiverPort > 65535) {
-    if (module.settings.log) h.log(CATEDRAL_VIDEO_PREVIEW_MODULE_ID, "Configure o IP e a porta do Controle Catedral.");
-    return false;
-  }
-
-  var endpoint = "http://" + receiverIp + ":" + receiverPort + "/api/video-preview";
+  // O receptor fica no mesmo PC do Holyrics: nenhum IP do aparelho é necessário.
+  var endpoint = "http://127.0.0.1:8766/api/video-preview";
 
   try {
     // A API documentada do Holyrics para requisições diretas é module.apiRequest.
