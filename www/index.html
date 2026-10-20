@@ -62,6 +62,72 @@
         }
         body.modo-texto-ativo #videoAtual { display: none !important; }
 
+        .video-token-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2500;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 8px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            background: rgba(0,0,0,.82);
+        }
+        .video-token-card {
+            width: min(520px, 100%);
+            max-height: calc(100vh - 16px);
+            max-height: calc(100dvh - 16px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            margin: auto 0;
+            padding: 14px 18px;
+            background: #171717;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0,0,0,.55);
+        }
+        .video-token-card h3 { margin: 0 0 6px; font-size: 18px; }
+        .video-token-card p { font-size: 12px; line-height: 1.35; color: #ddd; margin: 5px 0 8px; }
+        .video-token-card label { display: block; font-size: 12px; }
+        .video-token-card input {
+            display: block;
+            width: 100%;
+            padding: 7px 10px;
+            margin: 4px 0 8px;
+            background: #050505;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 6px;
+            font-size: 16px;
+            min-height: 36px;
+        }
+        .video-token-actions { display: flex; gap: 10px; margin-top: 6px; }
+        .video-token-actions button {
+            flex: 1;
+            padding: 9px;
+            border: 0;
+            border-radius: 6px;
+            color: #fff;
+            background: #1565c0;
+            font-size: 14px;
+        }
+        .video-token-actions button.secondary { background: #444; }
+        #videoTokenFeedback { display: block; min-height: 18px; color: #ffcc80; font-size: 12px; margin-top: 8px; }
+        @media (orientation: landscape) and (max-height: 520px) {
+            .video-token-overlay { padding: 4px; }
+            .video-token-card {
+                width: min(760px, 100%);
+                max-height: calc(100vh - 8px);
+                max-height: calc(100dvh - 8px);
+                padding: 9px 14px;
+            }
+            .video-token-card h3 { font-size: 16px; margin-bottom: 4px; }
+            .video-token-card p { font-size: 11px; line-height: 1.25; margin: 3px 0 5px; }
+            .video-token-card input { padding: 5px 8px; min-height: 30px; margin: 3px 0 5px; }
+            .video-token-actions button { padding: 7px; }
+        }
         img { max-width: 100%; max-height: 100%; object-fit: contain; }
         .next-title {
             padding: 5px;
@@ -347,6 +413,27 @@
         </div>
     </div>
 
+    <!-- Configuração da conexão OBS WebSocket usada exclusivamente pela prévia do campo Atual. -->
+    <div id="videoTokenOverlay" class="video-token-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="videoTokenTitle">
+        <div class="video-token-card">
+            <h3 id="videoTokenTitle">Conectar à fonte de vídeo do OBS</h3>
+            <p id="videoTokenExplanation">O aplicativo vai ler automaticamente a URL atual da fonte no OBS. Informe o endereço, a porta e a senha do OBS WebSocket (não é o token da API do Holyrics). Os dados ficam salvos somente neste aparelho.</p>
+            <label for="obsWsHostInput">IP ou host do computador com OBS</label>
+            <input id="obsWsHostInput" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="192.168.10.x">
+            <label for="obsWsPortInput">Porta do OBS WebSocket</label>
+            <input id="obsWsPortInput" type="number" inputmode="numeric" min="1" max="65535" placeholder="Porta configurada no OBS">
+            <label for="obsWsPasswordInput">Senha do OBS WebSocket</label>
+            <input id="obsWsPasswordInput" type="password" autocomplete="new-password" placeholder="Senha configurada no OBS">
+            <label for="obsWsInputName">Nome da fonte no OBS</label>
+            <input id="obsWsInputName" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" value="VIDEO HOLYRICS">
+            <div class="video-token-actions">
+                <button id="btnSalvarVideoToken" type="button">Testar e salvar</button>
+                <button id="btnCancelarVideoToken" class="secondary" type="button">Depois</button>
+            </div>
+            <small id="videoTokenFeedback"></small>
+        </div>
+    </div>
+
     <!-- Botões de navegação -->
     <button class="nav-btn" id="btnPrev" onclick="sendCmd('ActionPrevious')">◀</button>
     <button class="nav-btn" id="btnNext" onclick="sendCmd('ActionNext')">▶</button>
@@ -414,14 +501,24 @@
         let proximoVisivel = true;
         let lastSlideNumber = null;
 
-        // Estado da prévia de vídeo, isolado das funções de slides e playlist.
+        // Estado isolado da prévia de vídeo no campo Atual.
+        const OBS_VIDEO_CONFIG_KEY = 'catedralObsVideoConnection';
+        const OBS_VIDEO_CONFIG_VERSION_KEY = 'catedralObsVideoConfigVersion';
+        const OBS_VIDEO_CONFIG_VERSION = '2';
         let videoPreviewUrl = '';
         let videoPreviewPath = '';
         let videoPreviewActive = false;
         let videoPreviewErrorPath = '';
-        let videoPreviewCandidates = [];
-        let videoPreviewCandidateIndex = 0;
+        let videoTokenPromptDismissedPath = '';
         let latestMediaPlayerInfo = null;
+
+        // Conexão persistente ao OBS WebSocket v5. Não interfere nas chamadas da API do Holyrics.
+        let obsWsSocket = null;
+        let obsWsConnectPromise = null;
+        let obsWsIdentified = false;
+        let obsWsResolvedInputName = '';
+        let obsWsNextRequestId = 1;
+        const obsWsPendingRequests = new Map();
 
         /* ── WAKE LOCK (mantém tela ligada) ── */
         let wakeLock = null;
@@ -497,78 +594,346 @@
         }
 
         /* ── PRÉVIA DE VÍDEO (altera somente o campo Atual) ── */
-        // Reproduz o cálculo de URL do módulo Video Sync OBS+ usando o caminho informado
-        // pelo player Holyrics e o token já usado pela API. Não é necessário OBS WebSocket.
-        async function gerarUrlsDiretasVideo(info) {
-            const host = getHolyricsIp();
-            const paths = [];
-            [info.path, info.file_fullname, info.relative_path, info.name].forEach(value => {
-                const path = String(value || '').trim();
-                if (path && !paths.includes(path)) paths.push(path);
-            });
-
-            if (!host || !paths.length) {
-                throw new Error('Não foi possível obter o caminho do vídeo atual do Holyrics.');
+        function carregarConfigObsVideo() {
+            try {
+                const cfg = JSON.parse(localStorage.getItem(OBS_VIDEO_CONFIG_KEY) || 'null');
+                if (!cfg || !cfg.host || !cfg.port || !cfg.inputName) return null;
+                return cfg;
+            } catch (_) {
+                return null;
             }
-            if (!window.crypto || !window.crypto.subtle || !window.TextEncoder) {
-                throw new Error('Este dispositivo não oferece suporte ao cálculo do token de vídeo.');
-            }
-
-            // Tenta a porta padrão do módulo primeiro e, em seguida, a porta da API.
-            // O token é calculado por caminho e, portanto, é igual para todas as portas.
-            const ports = [80, HOLYRICS_API_PORT].filter((port, index, all) => all.indexOf(port) === index);
-            const urls = [];
-            for (const port of ports) {
-                for (const path of paths) {
-                    const bytes = new TextEncoder().encode(path + '#' + TOKEN);
-                    const digest = await window.crypto.subtle.digest('SHA-256', bytes);
-                    const digestBytes = new Uint8Array(digest);
-                    let binary = '';
-                    for (let i = 0; i < digestBytes.length; i++) binary += String.fromCharCode(digestBytes[i]);
-                    const token = btoa(binary).replace(/[^a-zA-Z0-9]/g, '').slice(0, 20);
-                    const prefix = 'http://' + host + (port === 80 ? '' : ':' + port);
-                    urls.push(prefix + '/get_video?path=' + encodeURIComponent(path) + '&token=' + token);
-                }
-            }
-            return urls;
         }
 
-        // Se o caminho ou a porta não corresponderem à configuração do plugin, tenta
-        // automaticamente a próxima variante. O operador não precisa preencher campos.
-        function carregarCandidatoVideo(index, mediaPath, info) {
-            if (videoPreviewPath !== mediaPath) return;
+        function abrirDialogoTokenVideo(message = '', configOverride = null) {
+            const overlay = document.getElementById('videoTokenOverlay');
+            const cfg = configOverride || carregarConfigObsVideo();
+            document.getElementById('obsWsHostInput').value =
+                (cfg && cfg.host) || getHolyricsIp();
+            document.getElementById('obsWsPortInput').value = (cfg && cfg.port) || '';
+            document.getElementById('obsWsPasswordInput').value = (cfg && cfg.password) || '';
+            document.getElementById('obsWsInputName').value =
+                (cfg && cfg.inputName) || 'VIDEO HOLYRICS';
+            document.getElementById('videoTokenFeedback').textContent = message;
+            overlay.classList.remove('hidden');
+            setTimeout(() => document.getElementById('obsWsHostInput').focus(), 100);
+        }
 
-            if (index >= videoPreviewCandidates.length) {
-                videoPreviewUrl = '';
-                videoPreviewErrorPath = mediaPath;
-                restaurarAtualHolyrics();
-                console.warn('Prévia Catedral: nenhuma URL direta do vídeo respondeu.', mediaPath);
+        function fecharDialogoTokenVideo() {
+            document.getElementById('videoTokenOverlay').classList.add('hidden');
+        }
+
+        function limparConexaoObsVideo() {
+            obsWsIdentified = false;
+            obsWsResolvedInputName = '';
+            if (obsWsSocket) {
+                try { obsWsSocket.close(); } catch (_) {}
+            }
+            obsWsSocket = null;
+            obsWsConnectPromise = null;
+            for (const [id, pending] of obsWsPendingRequests.entries()) {
+                clearTimeout(pending.timer);
+                pending.reject(new Error('Conexão OBS reiniciada.'));
+                obsWsPendingRequests.delete(id);
+            }
+        }
+
+        function bytesParaBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+            return btoa(binary);
+        }
+
+        async function obsSha256Base64(value) {
+            if (!window.crypto || !window.crypto.subtle || !window.TextEncoder) {
+                throw new Error('Este dispositivo não disponibiliza os recursos de criptografia necessários para autenticar no OBS.');
+            }
+            const data = new TextEncoder().encode(value);
+            return bytesParaBase64(await window.crypto.subtle.digest('SHA-256', data));
+        }
+
+        async function conectarObsWebSocket() {
+            const cfg = carregarConfigObsVideo();
+            if (!cfg) throw new Error('Configure o endereço, a porta e a senha do OBS WebSocket.');
+            if (obsWsSocket && obsWsSocket.readyState === WebSocket.OPEN && obsWsIdentified) {
+                return obsWsSocket;
+            }
+            if (obsWsConnectPromise) return obsWsConnectPromise;
+
+            obsWsConnectPromise = new Promise((resolve, reject) => {
+                let settled = false;
+                let identifySent = false;
+                let socket;
+                const fail = (error) => {
+                    if (socket && obsWsSocket === socket) {
+                        obsWsSocket = null;
+                        obsWsIdentified = false;
+                    }
+                    if (socket) {
+                        for (const [id, pending] of obsWsPendingRequests.entries()) {
+                            if (pending.socket === socket) {
+                                clearTimeout(pending.timer);
+                                pending.reject(error);
+                                obsWsPendingRequests.delete(id);
+                            }
+                        }
+                    }
+                    if (!settled) {
+                        settled = true;
+                        clearTimeout(connectTimer);
+                        reject(error instanceof Error ? error : new Error(String(error)));
+                    }
+                    try { if (socket && socket.readyState < WebSocket.CLOSING) socket.close(); } catch (_) {}
+                };
+
+                const connectTimer = setTimeout(() => {
+                    fail(new Error('Tempo esgotado ao conectar ao OBS. Confira IP, porta e se o servidor WebSocket está ativado.'));
+                }, 8000);
+
+                try {
+                    socket = new WebSocket('ws://' + cfg.host + ':' + cfg.port);
+                    obsWsSocket = socket;
+                } catch (error) {
+                    fail(new Error('Não foi possível abrir a conexão WebSocket do OBS. Confira o endereço e a porta.'));
+                    return;
+                }
+
+                socket.onmessage = async (event) => {
+                    let message;
+                    try {
+                        message = JSON.parse(event.data);
+                    } catch (_) {
+                        return;
+                    }
+
+                    if (message.op === 0 && !identifySent) {
+                        try {
+                            const data = { rpcVersion: Number(message.d.rpcVersion) || 1, eventSubscriptions: 0 };
+                            if (message.d.authentication) {
+                                const auth = message.d.authentication;
+                                const secret = await obsSha256Base64(String(cfg.password || '') + auth.salt);
+                                data.authentication = await obsSha256Base64(secret + auth.challenge);
+                            }
+                            socket.send(JSON.stringify({ op: 1, d: data }));
+                            identifySent = true;
+                        } catch (error) {
+                            fail(error);
+                        }
+                        return;
+                    }
+
+                    if (message.op === 2) {
+                        obsWsIdentified = true;
+                        if (!settled) {
+                            settled = true;
+                            clearTimeout(connectTimer);
+                            resolve(socket);
+                        }
+                        return;
+                    }
+
+                    if (message.op === 7 && message.d) {
+                        const pending = obsWsPendingRequests.get(message.d.requestId);
+                        if (!pending || pending.socket !== socket) return;
+                        clearTimeout(pending.timer);
+                        obsWsPendingRequests.delete(message.d.requestId);
+                        const status = message.d.requestStatus || {};
+                        if (status.result) pending.resolve(message.d.responseData || {});
+                        else pending.reject(new Error(status.comment || 'O OBS recusou a consulta da fonte.'));
+                    }
+                };
+
+                socket.onerror = () => {
+                    fail(new Error('Falha de conexão com o OBS WebSocket. Confira se o servidor está ativo e acessível na rede.'));
+                };
+
+                socket.onclose = () => {
+                    if (obsWsSocket === socket) {
+                        obsWsSocket = null;
+                        obsWsIdentified = false;
+                    }
+                    if (!settled) fail(new Error('O OBS encerrou a conexão WebSocket antes da autenticação.'));
+                    else {
+                        for (const [id, pending] of obsWsPendingRequests.entries()) {
+                            if (pending.socket === socket) {
+                                clearTimeout(pending.timer);
+                                pending.reject(new Error('A conexão WebSocket com o OBS foi encerrada.'));
+                                obsWsPendingRequests.delete(id);
+                            }
+                        }
+                    }
+                };
+            }).finally(() => {
+                obsWsConnectPromise = null;
+            });
+
+            return obsWsConnectPromise;
+        }
+
+        async function requisicaoObsWebSocket(requestType, requestData) {
+            const socket = await conectarObsWebSocket();
+            const requestId = 'catedral-preview-' + (obsWsNextRequestId++);
+            return new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    obsWsPendingRequests.delete(requestId);
+                    reject(new Error('O OBS não respondeu à consulta da fonte a tempo.'));
+                }, 7000);
+                obsWsPendingRequests.set(requestId, { resolve, reject, timer, socket });
+                try {
+                    socket.send(JSON.stringify({
+                        op: 6,
+                        d: {
+                            requestType: requestType,
+                            requestId: requestId,
+                            requestData: requestData || {}
+                        }
+                    }));
+                } catch (error) {
+                    clearTimeout(timer);
+                    obsWsPendingRequests.delete(requestId);
+                    reject(error);
+                }
+            });
+        }
+
+        async function resolverNomeFonteVideoObs(cfg) {
+            if (obsWsResolvedInputName &&
+                obsWsResolvedInputName.toLocaleLowerCase() === cfg.inputName.toLocaleLowerCase()) {
+                return obsWsResolvedInputName;
+            }
+
+            const result = await requisicaoObsWebSocket('GetInputList', {});
+            const inputs = Array.isArray(result.inputs) ? result.inputs : [];
+            const wanted = String(cfg.inputName || 'VIDEO HOLYRICS').trim().toLocaleLowerCase();
+            const match = inputs.find(item =>
+                String(item.inputName || '').trim().toLocaleLowerCase() === wanted
+            );
+            if (!match) {
+                const available = inputs.map(item => item.inputName).filter(Boolean).slice(0, 16).join(', ');
+                throw new Error('Não encontrei a fonte "' + cfg.inputName + '" no OBS. Confira o nome exato. Fontes encontradas: ' + (available || 'nenhuma fonte listada') + '.');
+            }
+            obsWsResolvedInputName = match.inputName;
+            return match.inputName;
+        }
+
+        async function validarConexaoObsVideo(cfg) {
+            const inputName = await resolverNomeFonteVideoObs(cfg);
+            const result = await requisicaoObsWebSocket('GetInputSettings', { inputName: inputName });
+            if (!result || !result.inputSettings) {
+                throw new Error('O OBS respondeu, mas não retornou as configurações da fonte "' + inputName + '".');
+            }
+            return result;
+        }
+
+        async function obterUrlFonteVideoObs() {
+            const cfg = carregarConfigObsVideo();
+            if (!cfg) throw new Error('Configure a conexão com o OBS WebSocket para habilitar a prévia.');
+            const inputName = await resolverNomeFonteVideoObs(cfg);
+            const result = await requisicaoObsWebSocket('GetInputSettings', { inputName: inputName });
+            let rawUrl = String(
+                (result.inputSettings && (result.inputSettings.input || result.inputSettings.url)) ||
+                result.input || result.url || ''
+            ).trim();
+
+            // Retira somente aspas que eventualmente tenham sido armazenadas literalmente na configuração.
+            rawUrl = rawUrl.replace(/^["']/, '').replace(/["']$/, '').trim();
+            let url;
+            try {
+                url = new URL(rawUrl);
+            } catch (_) {
+                throw new Error('A fonte "' + cfg.inputName + '" não retornou uma URL válida.');
+            }
+            if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+                throw new Error('A fonte "' + cfg.inputName + '" não está usando uma URL HTTP.');
+            }
+            if (!/\/get_video\/?$/i.test(url.pathname)) {
+                throw new Error('A fonte "' + cfg.inputName + '" ainda não contém um endereço /get_video. Inicie um vídeo aceito pelo módulo Video Sync OBS+ e tente novamente.');
+            }
+
+            // "localhost" funciona no computador do OBS, mas não no tablet.
+            // Nesse caso usamos o endereço da máquina já configurada para a API do Holyrics.
+            if (url.hostname.toLowerCase() === 'localhost' ||
+                url.hostname === '127.0.0.1' || url.hostname === '::1') {
+                url.hostname = getHolyricsIp();
+            }
+            return url.toString();
+        }
+
+        function nomeBaseVideo(path) {
+            let value = String(path || '').replace(/\\/g, '/').split('/').pop().trim();
+            try { value = decodeURIComponent(value); } catch (_) {}
+            try { value = value.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); } catch (_) {}
+            return value.toLocaleLowerCase();
+        }
+
+        function urlCorrespondeAoVideo(urlText, mediaPath) {
+            try {
+                const url = new URL(urlText);
+                const streamPath = url.searchParams.get('path') || '';
+                const streamName = nomeBaseVideo(streamPath);
+                const currentName = nomeBaseVideo(mediaPath);
+                return !!streamName && !!currentName && streamName === currentName;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        async function salvarTokenVideo() {
+            const host = document.getElementById('obsWsHostInput').value.trim()
+                .replace(/^wss?:\/\//i, '').replace(/\/+$/, '');
+            const portText = document.getElementById('obsWsPortInput').value.trim();
+            const port = Number(portText);
+            const password = document.getElementById('obsWsPasswordInput').value;
+            const inputName = document.getElementById('obsWsInputName').value.trim() || 'VIDEO HOLYRICS';
+            const feedback = document.getElementById('videoTokenFeedback');
+
+            if (!host || /[\/?#\s]/.test(host)) {
+                feedback.textContent = 'Informe somente o IP ou nome do computador que executa o OBS.';
+                return;
+            }
+            if (!portText || !Number.isInteger(port) || port < 1 || port > 65535) {
+                feedback.textContent = 'Informe a porta configurada em Ferramentas → Configurações do WebSocket do OBS.';
+                return;
+            }
+            if (!inputName) {
+                feedback.textContent = 'Informe o nome exato da fonte de vídeo do OBS.';
                 return;
             }
 
-            videoPreviewCandidateIndex = index;
-            const streamUrl = videoPreviewCandidates[index];
-            const video = document.getElementById('videoAtual');
-            videoPreviewUrl = streamUrl;
-            video.pause();
-
-            video.onerror = () => {
-                if (videoPreviewPath !== mediaPath || videoPreviewUrl !== streamUrl) return;
-                console.warn('Prévia Catedral: tentativa de URL falhou; testando a próxima.', streamUrl);
-                carregarCandidatoVideo(index + 1, mediaPath, latestMediaPlayerInfo || info);
-            };
-            video.onloadedmetadata = () => {
-                if (videoPreviewPath !== mediaPath || videoPreviewUrl !== streamUrl) return;
-                sincronizarTempoVideo(latestMediaPlayerInfo || info);
-            };
-            video.oncanplay = () => {
-                if (videoPreviewPath !== mediaPath || videoPreviewUrl !== streamUrl) return;
-                sincronizarTempoVideo(latestMediaPlayerInfo || info);
-                mostrarVideoAtual();
-            };
-            video.src = streamUrl;
-            video.load();
+            const cfg = { host: host, port: port, password: password, inputName: inputName };
+            localStorage.setItem(OBS_VIDEO_CONFIG_KEY, JSON.stringify(cfg));
+            limparConexaoObsVideo();
+            feedback.textContent = 'Testando a conexão com o OBS...';
+            try {
+                // Primeiro valida a autenticação e a existência da fonte.
+                // Não exige que ela já contenha uma URL /get_video neste instante:
+                // o módulo Video Sync OBS+ atualiza a URL quando o vídeo começa.
+                await validarConexaoObsVideo(cfg);
+                localStorage.setItem(OBS_VIDEO_CONFIG_KEY, JSON.stringify(cfg));
+                localStorage.setItem(OBS_VIDEO_CONFIG_VERSION_KEY, OBS_VIDEO_CONFIG_VERSION);
+                videoPreviewUrl = '';
+                videoPreviewErrorPath = '';
+                videoTokenPromptDismissedPath = '';
+                fecharDialogoTokenVideo();
+                atualizarPreviaVideo();
+                console.log('Prévia Catedral: conexão OBS validada; fonte de vídeo encontrada.');
+            } catch (error) {
+                // Não deixar uma configuração inválida marcada como salva:
+                // isso impedia a janela de reaparecer na próxima abertura do app.
+                localStorage.removeItem(OBS_VIDEO_CONFIG_KEY);
+                localStorage.removeItem(OBS_VIDEO_CONFIG_VERSION_KEY);
+                limparConexaoObsVideo();
+                feedback.textContent = error && error.message
+                    ? error.message
+                    : 'Não foi possível consultar a fonte do OBS. Confira a configuração e tente novamente.';
+            }
         }
+
+        document.getElementById('btnSalvarVideoToken').addEventListener('click', salvarTokenVideo);
+        document.getElementById('btnCancelarVideoToken').addEventListener('click', () => {
+            videoTokenPromptDismissedPath = videoPreviewPath;
+            fecharDialogoTokenVideo();
+        });
 
         function caminhoVideoAtual(info) {
             let path = String(info.relative_path || info.name || '').trim();
@@ -640,44 +1005,81 @@
                         const video = document.getElementById('videoAtual');
                         video.removeAttribute('src');
                         video.load();
+                        videoPreviewUrl = '';
+                        videoPreviewPath = '';
+                        videoPreviewErrorPath = '';
                     }
-                    videoPreviewUrl = '';
-                    videoPreviewPath = '';
-                    videoPreviewErrorPath = '';
-                    videoPreviewCandidates = [];
-                    videoPreviewCandidateIndex = 0;
                     return;
                 }
 
                 if (mediaPath !== videoPreviewPath) {
                     videoPreviewPath = mediaPath;
                     videoPreviewErrorPath = '';
-                    videoPreviewUrl = '';
-                    videoPreviewCandidates = [];
-                    videoPreviewCandidateIndex = 0;
+                    videoTokenPromptDismissedPath = '';
+                }
 
-                    const oldVideo = document.getElementById('videoAtual');
-                    oldVideo.pause();
-                    oldVideo.removeAttribute('src');
-                    oldVideo.load();
+                if (modoTexto) return;
+
+                if (!carregarConfigObsVideo()) {
                     restaurarAtualHolyrics();
+                    if (videoTokenPromptDismissedPath !== mediaPath) {
+                        abrirDialogoTokenVideo();
+                    }
+                    return;
                 }
 
-                if (modoTexto || videoPreviewErrorPath === mediaPath) return;
+                if (videoPreviewErrorPath === mediaPath) return;
 
-                if (!videoPreviewCandidates.length) {
-                    videoPreviewCandidates = await gerarUrlsDiretasVideo(info);
+                let streamUrl;
+                try {
+                    streamUrl = await obterUrlFonteVideoObs();
+                } catch (error) {
+                    restaurarAtualHolyrics();
+                    videoPreviewErrorPath = mediaPath;
+                    abrirDialogoTokenVideo(
+                        (error && error.message ? error.message : 'Não foi possível consultar a fonte do OBS.') +
+                        ' Confira a configuração do WebSocket e toque em “Testar e salvar”.'
+                    );
+                    return;
                 }
+
+                // A URL do módulo é a fonte confiável e já inclui o token necessário.
+                // Não bloqueie a reprodução por diferenças de caminho entre o nome retornado
+                // pela API do Holyrics e o caminho usado pelo plugin em /get_video.
+                // O módulo atualiza a URL da fonte a cada vídeo elegível.
+                console.log('Prévia Catedral: URL de vídeo recebida do OBS.', {
+                    mediaPath: mediaPath,
+                    streamUrl: streamUrl
+                });
 
                 const video = document.getElementById('videoAtual');
-                if (!videoPreviewUrl) {
-                    carregarCandidatoVideo(videoPreviewCandidateIndex, mediaPath, info);
+                if (streamUrl !== videoPreviewUrl) {
+                    videoPreviewUrl = streamUrl;
+                    video.pause();
+                    video.onerror = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        videoPreviewErrorPath = mediaPath;
+                        restaurarAtualHolyrics();
+                        abrirDialogoTokenVideo('A URL veio do OBS, mas o tablet não conseguiu reproduzir o fluxo de vídeo. Confira se o IP exibido na URL é acessível pelo tablet.');
+                    };
+                    video.onloadedmetadata = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        sincronizarTempoVideo(latestMediaPlayerInfo || info);
+                    };
+                    video.oncanplay = () => {
+                        if (videoPreviewUrl !== streamUrl) return;
+                        sincronizarTempoVideo(latestMediaPlayerInfo || info);
+                        mostrarVideoAtual();
+                    };
+                    video.src = streamUrl;
+                    video.load();
                 } else {
                     sincronizarTempoVideo(info);
                     if (video.readyState >= 2) mostrarVideoAtual();
                 }
             } catch (error) {
-                console.warn('Prévia Catedral: não foi possível preparar o vídeo atual.', error);
+                // A falha da prévia não interfere na exibição normal do Holyrics.
+                console.warn('Não foi possível consultar a prévia de vídeo:', error);
             } finally {
                 setTimeout(atualizarPreviaVideo, 1000);
             }
@@ -898,6 +1300,7 @@
                     } else {
                         localStorage.setItem(HOLYRICS_IP_KEY, novoIp);
                         aplicarEnderecoHolyricsNasTelas();
+                        limparConexaoObsVideo();
                         conexaoHolyricsConfirmada = await testarConexaoHolyrics();
 
                         if (!conexaoHolyricsConfirmada) {
@@ -907,6 +1310,34 @@
                     }
                 }
                 aplicarEnderecoHolyricsNasTelas();
+            }
+
+            // A configuração do OBS não depende da validação do endpoint de apresentação
+            // do Holyrics. Configurações antigas são reapresentadas uma vez para confirmar
+            // os dados e corrigir versões que os salvaram sem validação completa.
+            const cfgObs = carregarConfigObsVideo();
+            const versaoCfgObs = localStorage.getItem(OBS_VIDEO_CONFIG_VERSION_KEY);
+
+            if (!cfgObs || versaoCfgObs !== OBS_VIDEO_CONFIG_VERSION) {
+                abrirDialogoTokenVideo(
+                    cfgObs
+                        ? 'Confirme e teste a configuração do OBS WebSocket nesta versão para ativar a prévia.'
+                        : 'Configure o OBS WebSocket para ativar a prévia de vídeo. Isso é separado da conexão do Holyrics.',
+                    cfgObs
+                );
+            } else {
+                try {
+                    await validarConexaoObsVideo(cfgObs);
+                } catch (erroObs) {
+                    localStorage.removeItem(OBS_VIDEO_CONFIG_KEY);
+                    localStorage.removeItem(OBS_VIDEO_CONFIG_VERSION_KEY);
+                    limparConexaoObsVideo();
+                    abrirDialogoTokenVideo(
+                        'A configuração anterior do OBS não foi validada. Confira os dados e teste novamente. ' +
+                        (erroObs && erroObs.message ? erroObs.message : ''),
+                        cfgObs
+                    );
+                }
             }
 
             updateData();
