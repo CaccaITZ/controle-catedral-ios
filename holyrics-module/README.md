@@ -28,7 +28,7 @@ Se a política de requisições permitidas do Holyrics bloquear o envio, inclua 
 
 ## Teste do índice no PC antes do APK
 
-1. Baixe `www/index-pc-teste.html` e `tools/servidor-index-pc-teste.ps1) para a mesma pasta.
+1. Baixe `www/index-pc-teste.html` e `tools/servidor-index-pc-teste.ps1 para a mesma pasta.
 2. Execute o script com Windows PowerShell. Ele abre o índice de teste e fornece localmente o endpoint HTTP que simula o receptor nativo.
 3. Na configuração do módulo no Holyrics, use IP `127.0.0.1` e porta `8766`. Como o Holyrics e o servidor de teste estão no mesmo PC, a requisição chegará ao teste local.
 4. Inicie um vídeo no Holyrics. O servidor mostrará no PowerShell que recebeu a URL; a página de teste deverá reproduzi-la em **Atual**.
