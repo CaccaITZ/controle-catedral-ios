@@ -1264,18 +1264,18 @@
             if (!conexaoHolyricsConfirmada) {
                 const atual = getHolyricsIp();
                 const resposta = prompt(
-                    'Não consegui confirmar a conexão com o Holyrics no endereço ' + atual + '.\\n\\n' +
+                    'Não consegui confirmar a conexão com o Holyrics no endereço ' + atual + '.\n\n' +
                     'Digite o IP atual do computador onde o Holyrics está aberto.',
                     atual
                 );
 
                 if (resposta !== null && resposta.trim()) {
                     const novoIp = resposta.trim()
-                        .replace(/^https?:\\/\\//i, '')
-                        .replace(/\\/+$/, '')
-                        .replace(/:\\d+$/, '');
+                        .replace(/^https?:\/\//i, '')
+                        .replace(/\/+$/, '')
+                        .replace(/:\d+$/, '');
 
-                    if (!novoIp || /[\\s/?#]/.test(novoIp)) {
+                    if (!novoIp || /[\s/?#]/.test(novoIp)) {
                         alert('Endereço inválido. Digite somente o IP ou nome do computador.');
                     } else {
                         localStorage.setItem(HOLYRICS_IP_KEY, novoIp);
