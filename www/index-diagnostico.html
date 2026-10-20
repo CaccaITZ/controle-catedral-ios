@@ -644,7 +644,10 @@
 
         /* ── API ── */
         async function api(action, body = {}) {
-            const host = getHolyricsIp();
+            // Teste de diagnóstico: consulta o próprio computador pelo loopback.
+            // Isso verifica se o API Server do Holyrics está acessível localmente,
+            // sem alterar o IP configurado para as telas ou para a versão principal.
+            const host = '127.0.0.1';
             const proxyUrl = '/__proxy/api/' + encodeURIComponent(action) +
                 '?host=' + encodeURIComponent(host) + '&token=' + encodeURIComponent(TOKEN);
             const r = await fetch(proxyUrl, {
@@ -655,6 +658,7 @@
             const json = await r.json();
             if (action === 'GetMediaPlayerInfo') {
                 videoDiag('API_GetMediaPlayerInfo', {
+                    apiHostTestado: '127.0.0.1:4455',
                     httpStatus: r.status, status: json && json.status,
                     erro: json && json.error ? json.error : null,
                     detalhes: json && json.details ? json.details : null,
