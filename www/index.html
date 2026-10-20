@@ -482,16 +482,13 @@
 
         // O módulo envia a URL para um receptor local no PC do Holyrics.
         // O app consulta esse PC pelo IP configurado; o IP do aparelho é irrelevante.
-        const VIDEO_PREVIEW_RECEIVER_PORT = 8766;
-        const VIDEO_PREVIEW_PC_POLL_MS = 350;
         let videoPreviewUrl = '';
         let videoPreviewPath = '';
         let videoPreviewActive = false;
         let videoPreviewErrorUrl = '';
         let latestMediaPlayerInfo = null;
         let lastReceivedPreviewSignature = '';
-        let videoPreviewReceiverTimer = null;
-        let videoPreviewReceiverPlugin = null;
+        let catedralPreviewEndpointWarned = false;
 
         /* ── WAKE LOCK (mantém tela ligada) ── */
         let wakeLock = null;
@@ -639,14 +636,16 @@
             }
 
             const signature = rawUrl + '|' + String(payload.updated_at || '');
-            if (signature === lastReceivedPreviewSignature || rawUrl === videoPreviewUrl) {
-                if (payload.path) videoPreviewPath = String(payload.path);
-                return;
+            const sameVideo = (signature === lastReceivedPreviewSignature || rawUrl === videoPreviewUrl);
+            if (payload.path) videoPreviewPath = String(payload.path);
+            if (sameVideo) {
+                const existingVideo = document.getElementById('videoAtual');
+                if (modoTexto || existingVideo.getAttribute('src') === rawUrl) return;
             }
 
             lastReceivedPreviewSignature = signature;
             videoPreviewUrl = rawUrl;
-            videoPreviewPath = String(payload.path || payload.name || '');
+            videoPreviewPath = String(payload.path || payload.name || videoPreviewPath || '');
             videoPreviewErrorUrl = '';
 
             if (modoTexto) return;
@@ -677,31 +676,6 @@
             video.play().catch(() => {});
         }
 
-        async function consultarUltimaPreviaHolyrics() {
-            try {
-                const endpoint = 'http://' + getHolyricsIp() + ':' +
-                    VIDEO_PREVIEW_RECEIVER_PORT + '/__receiver/video-preview/latest';
-                const response = await fetch(endpoint, { cache: 'no-store' });
-                if (!response.ok) return;
-                const payload = await response.json();
-                if (payload && (payload.available === false || payload.url)) {
-                    receberUrlVideoModulo(payload);
-                }
-            } catch (_) {
-                // O receptor do PC do Holyrics pode estar indisponível; as demais funções continuam funcionando.
-            }
-        }
-
-        async function iniciarReceptorPreviaVideo() {
-            // O app consulta o PC do Holyrics. Nenhum IP do tablet/celular precisa ser configurado.
-            await consultarUltimaPreviaHolyrics();
-            if (videoPreviewReceiverTimer) clearInterval(videoPreviewReceiverTimer);
-            videoPreviewReceiverTimer = setInterval(
-                consultarUltimaPreviaHolyrics,
-                VIDEO_PREVIEW_PC_POLL_MS
-            );
-        }
-
         function caminhoVideoAtual(info) {
             let path = String(info.relative_path || info.name || '').trim();
             path = path.replace(/^video[\\/]/i, '');
@@ -721,10 +695,31 @@
 
         async function atualizarPreviaVideo() {
             try {
-                const result = await api('GetMediaPlayerInfo');
-                if (!result || result.status !== 'ok' || !result.data) return;
+                // Todos os aparelhos consultam a mesma publicação do módulo no API Server do Holyrics.
+                // Não há IP/porta receptora do aparelho nem serviço auxiliar no PC.
+                const respostas = await Promise.all([
+                    api('GetMediaPlayerInfo'),
+                    api('GetCatedralVideoPreview')
+                ]);
 
-                const info = result.data;
+                const respostaPlayer = respostas[0];
+                const respostaPrevia = respostas[1];
+
+                if (respostaPrevia && respostaPrevia.status === 'ok' && respostaPrevia.data) {
+                    catedralPreviewEndpointWarned = false;
+                    receberUrlVideoModulo(respostaPrevia.data);
+                } else if (!catedralPreviewEndpointWarned) {
+                    catedralPreviewEndpointWarned = true;
+                    console.warn(
+                        'Prévia Catedral: não foi possível consultar GetCatedralVideoPreview. ' +
+                        'Verifique se a ação personalizada foi adicionada ao API Server do Holyrics.',
+                        respostaPrevia
+                    );
+                }
+
+                if (!respostaPlayer || respostaPlayer.status !== 'ok' || !respostaPlayer.data) return;
+
+                const info = respostaPlayer.data;
                 latestMediaPlayerInfo = info;
                 const duration = Number(info.duration_ms);
                 const elapsed = Number(info.time_ms);
@@ -734,9 +729,7 @@
                       Number.isFinite(elapsed) && elapsed >= 0 && elapsed < duration));
 
                 if (!active) {
-                    if (videoPreviewUrl || videoPreviewActive) {
-                        limparPreviaRecebida();
-                    }
+                    if (videoPreviewUrl || videoPreviewActive) limparPreviaRecebida();
                     return;
                 }
 
@@ -978,9 +971,7 @@
                 aplicarEnderecoHolyricsNasTelas();
             }
 
-            // Inicia o receptor HTTP da URL enviada pelo módulo. Nenhuma conexão com
-            // OBS é necessária para exibir a prévia no campo Atual.
-            await iniciarReceptorPreviaVideo();
+            // A prévia é consultada diretamente no API Server do Holyrics; não é necessário iniciar servidor auxiliar.
             updateData();
             atualizarPreviaVideo();
         }
