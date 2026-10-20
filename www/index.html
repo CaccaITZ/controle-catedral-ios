@@ -470,6 +470,7 @@
         let obsWsSocket = null;
         let obsWsConnectPromise = null;
         let obsWsIdentified = false;
+        let obsWsResolvedInputName = '';
         let obsWsNextRequestId = 1;
         const obsWsPendingRequests = new Map();
 
@@ -577,6 +578,7 @@
 
         function limparConexaoObsVideo() {
             obsWsIdentified = false;
+            obsWsResolvedInputName = '';
             if (obsWsSocket) {
                 try { obsWsSocket.close(); } catch (_) {}
             }
@@ -748,10 +750,31 @@
             });
         }
 
+        async function resolverNomeFonteVideoObs(cfg) {
+            if (obsWsResolvedInputName &&
+                obsWsResolvedInputName.toLocaleLowerCase() === cfg.inputName.toLocaleLowerCase()) {
+                return obsWsResolvedInputName;
+            }
+
+            const result = await requisicaoObsWebSocket('GetInputList', {});
+            const inputs = Array.isArray(result.inputs) ? result.inputs : [];
+            const wanted = String(cfg.inputName || 'VIDEO HOLYRICS').trim().toLocaleLowerCase();
+            const match = inputs.find(item =>
+                String(item.inputName || '').trim().toLocaleLowerCase() === wanted
+            );
+            if (!match) {
+                const available = inputs.map(item => item.inputName).filter(Boolean).slice(0, 16).join(', ');
+                throw new Error('Não encontrei a fonte "' + cfg.inputName + '" no OBS. Confira o nome exato. Fontes encontradas: ' + (available || 'nenhuma fonte listada') + '.');
+            }
+            obsWsResolvedInputName = match.inputName;
+            return match.inputName;
+        }
+
         async function obterUrlFonteVideoObs() {
             const cfg = carregarConfigObsVideo();
             if (!cfg) throw new Error('Configure a conexão com o OBS WebSocket para habilitar a prévia.');
-            const result = await requisicaoObsWebSocket('GetInputSettings', { inputName: cfg.inputName });
+            const inputName = await resolverNomeFonteVideoObs(cfg);
+            const result = await requisicaoObsWebSocket('GetInputSettings', { inputName: inputName });
             let rawUrl = String(
                 (result.inputSettings && (result.inputSettings.input || result.inputSettings.url)) ||
                 result.input || result.url || ''
