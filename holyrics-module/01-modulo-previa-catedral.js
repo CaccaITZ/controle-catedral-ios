@@ -14,7 +14,7 @@ function info() {
   return {
     id: CATEDRAL_VIDEO_PREVIEW_MODULE_ID,
     name: "Prévia de Vídeo — Envio ao Controle Catedral",
-    description: "Envia diretamente ao Controle Catedral a URL autenticada do vídeo exibido no Holyrics. Não depende do OBS.",
+    description: "Publica a URL autenticada no receptor local do PC do Holyrics para o Controle Catedral consultar pela rede. Não depende do OBS.",
     // A URL é enviada ao serviço local no mesmo PC que executa o Holyrics.
     allowed_requests: [
       "http://127.0.0.1:8766/api/video-preview"
@@ -29,7 +29,7 @@ function settings() {
   return [
     {
       type: "label",
-      name: "Envie a URL do vídeo diretamente ao aplicativo. Não é necessário usar o OBS para esta função."
+      name: "Publica a URL no PC do Holyrics para o app consultar. Não é necessário usar o OBS para esta função."
     },
     {
       type: "label",
