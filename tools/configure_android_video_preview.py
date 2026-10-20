@@ -99,6 +99,18 @@ public class VideoPreviewServerPlugin extends Plugin {
         thread.start();
     }
 
+    private synchronized void stopServer() {
+        running = false;
+        ServerSocket current = serverSocket;
+        serverSocket = null;
+        if (current != null) {
+            try {
+                current.close();
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
     private void acceptLoop(ServerSocket socket) {
         while (running && socket == serverSocket && !socket.isClosed()) {
             try {
