@@ -83,7 +83,7 @@ function Read-HttpRequest($stream) {
         Method = $first[0].ToUpperInvariant()
         Target = $first[1]
         Path = $uri.AbsolutePath
-        Query = Parse-Query $uri.Query
+        Query = (Parse-Query $uri.Query)
         Headers = $headers
         Body = $body
     }
