@@ -448,8 +448,29 @@
     </div>
 
     <script>
-        const HOST  = "192.168.10.178:4455";
+        const DEFAULT_HOLYRICS_IP = "192.168.10.178";
+        const HOLYRICS_IP_KEY = "catedralHolyricsServerIp";
+        const HOLYRICS_API_PORT = 4455;
         const TOKEN = "A9DDQuW0b3CZhc5p";
+
+        function getHolyricsIp() {
+            const saved = (localStorage.getItem(HOLYRICS_IP_KEY) || '').trim();
+            return saved || DEFAULT_HOLYRICS_IP;
+        }
+
+        function getHolyricsApiBase() {
+            return 'http://' + getHolyricsIp() + ':' + HOLYRICS_API_PORT;
+        }
+
+        function aplicarEnderecoHolyricsNasTelas() {
+            const base = 'http://' + getHolyricsIp();
+            const atual = document.getElementById('atualContainer');
+            const texto = document.getElementById('textoContainer');
+            const proximo = document.getElementById('textoProximo');
+            if (atual) atual.src = base + '/stage-view/widescreen';
+            if (texto) texto.src = base + ':80/view/text2';
+            if (proximo) proximo.src = base + ':80/stage-view/text';
+        }
 
         let modoTexto    = false;
         let gavetaAberta = false;
@@ -532,7 +553,7 @@
 
         /* ── API ── */
         async function api(action, body = {}) {
-            const r = await fetch(`http://${HOST}/api/${action}?token=${TOKEN}`, {
+            const r = await fetch(getHolyricsApiBase() + '/api/' + action + '?token=' + encodeURIComponent(TOKEN), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
@@ -562,7 +583,7 @@
             const overlay = document.getElementById('videoTokenOverlay');
             const cfg = carregarConfigObsVideo();
             document.getElementById('obsWsHostInput').value =
-                (cfg && cfg.host) || (new URL('http://' + HOST)).hostname;
+                (cfg && cfg.host) || getHolyricsIp();
             document.getElementById('obsWsPortInput').value = (cfg && cfg.port) || '';
             document.getElementById('obsWsPasswordInput').value = (cfg && cfg.password) || '';
             document.getElementById('obsWsInputName').value =
@@ -799,7 +820,7 @@
             // Nesse caso usamos o endereço da máquina já configurada para a API do Holyrics.
             if (url.hostname.toLowerCase() === 'localhost' ||
                 url.hostname === '127.0.0.1' || url.hostname === '::1') {
-                url.hostname = (new URL('http://' + HOST)).hostname;
+                url.hostname = getHolyricsIp();
             }
             return url.toString();
         }
@@ -1038,7 +1059,7 @@
                     if (atual !== lastSlideNumber) {
                         lastSlideNumber = atual;
                         document.getElementById('atualContainer').src =
-                            `http://192.168.10.178/stage-view/widescreen?_=${Date.now()}`;
+                        document.getElementById('atualContainer').src = 'http://' + getHolyricsIp() + '/stage-view/widescreen?_=' + Date.now();
                     }
                     if (j.data.slides && j.data.slides[atual]) {
                         document.getElementById('nextSlide').src =
@@ -1199,9 +1220,57 @@
             }
         }
 
-        /* ── Init ── */
-        updateData();
-        atualizarPreviaVideo();
+        /* ── Inicialização e recuperação de IP do Holyrics ── */
+        async function iniciarAplicativo() {
+            aplicarEnderecoHolyricsNasTelas();
+
+            try {
+                const teste = await api('GetCurrentPresentation', {});
+                if (!teste || teste.status !== 'ok') {
+                    throw new Error((teste && teste.error) || 'O API Server não confirmou a conexão.');
+                }
+            } catch (error) {
+                const atual = getHolyricsIp();
+                const resposta = prompt(
+                    'Não foi possível conectar ao Holyrics no endereço ' + atual + '.\n\n' +
+                    'Digite o IP atual do computador onde o Holyrics está aberto.\n' +
+                    'Na sua rede de casa, o endereço pode ser diferente do usado na igreja.',
+                    atual
+                );
+
+                if (resposta !== null && resposta.trim()) {
+                    const novoIp = resposta.trim()
+                        .replace(/^https?:\/\//i, '')
+                        .replace(/\/+$/, '')
+                        .replace(/:\d+$/, '');
+
+                    if (!novoIp || /[\s/?#]/.test(novoIp)) {
+                        alert('Endereço inválido. Digite somente o IP ou nome do computador.');
+                    } else {
+                        localStorage.setItem(HOLYRICS_IP_KEY, novoIp);
+                        aplicarEnderecoHolyricsNasTelas();
+                        limparConexaoObsVideo();
+
+                        try {
+                            const testeNovo = await api('GetCurrentPresentation', {});
+                            if (!testeNovo || testeNovo.status !== 'ok') {
+                                throw new Error('O Holyrics não confirmou a conexão nesse endereço.');
+                            }
+                        } catch (erroNovo) {
+                            alert('Ainda não foi possível conectar ao Holyrics em ' + novoIp +
+                                '. Verifique se o tablet e o computador estão na mesma rede Wi-Fi e se o IP está correto.');
+                        }
+                    }
+                }
+
+                aplicarEnderecoHolyricsNasTelas();
+            }
+
+            updateData();
+            atualizarPreviaVideo();
+        }
+
+        iniciarAplicativo();
     </script>
 </body>
 </html>
