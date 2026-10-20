@@ -791,6 +791,15 @@
             return match.inputName;
         }
 
+        async function validarConexaoObsVideo(cfg) {
+            const inputName = await resolverNomeFonteVideoObs(cfg);
+            const result = await requisicaoObsWebSocket('GetInputSettings', { inputName: inputName });
+            if (!result || !result.inputSettings) {
+                throw new Error('O OBS respondeu, mas não retornou as configurações da fonte "' + inputName + '".');
+            }
+            return result;
+        }
+
         async function obterUrlFonteVideoObs() {
             const cfg = carregarConfigObsVideo();
             if (!cfg) throw new Error('Configure a conexão com o OBS WebSocket para habilitar a prévia.');
@@ -871,7 +880,10 @@
             limparConexaoObsVideo();
             feedback.textContent = 'Testando a conexão com o OBS...';
             try {
-                const url = await obterUrlFonteVideoObs();
+                // Primeiro valida a autenticação e a existência da fonte.
+                // Não exige que ela já contenha uma URL /get_video neste instante:
+                // o módulo Video Sync OBS+ atualiza a URL quando o vídeo começa.
+                await validarConexaoObsVideo(cfg);
                 localStorage.setItem(OBS_VIDEO_CONFIG_KEY, JSON.stringify(cfg));
                 videoPreviewUrl = '';
                 videoPreviewErrorPath = '';
@@ -1222,12 +1234,14 @@
         /* ── Inicialização e recuperação de IP do Holyrics ── */
         async function iniciarAplicativo() {
             aplicarEnderecoHolyricsNasTelas();
+            let conexaoHolyricsConfirmada = false;
 
             try {
                 const teste = await api('GetCurrentPresentation', {});
                 if (!teste || teste.status !== 'ok') {
                     throw new Error((teste && teste.error) || 'O API Server não confirmou a conexão.');
                 }
+                conexaoHolyricsConfirmada = true;
             } catch (error) {
                 const atual = getHolyricsIp();
                 const resposta = prompt(
@@ -1255,6 +1269,7 @@
                             if (!testeNovo || testeNovo.status !== 'ok') {
                                 throw new Error('O Holyrics não confirmou a conexão nesse endereço.');
                             }
+                            conexaoHolyricsConfirmada = true;
                         } catch (erroNovo) {
                             alert('Ainda não foi possível conectar ao Holyrics em ' + novoIp +
                                 '. Verifique se o tablet e o computador estão na mesma rede Wi-Fi e se o IP está correto.');
@@ -1263,6 +1278,10 @@
                 }
 
                 aplicarEnderecoHolyricsNasTelas();
+            }
+
+            if (conexaoHolyricsConfirmada && !carregarConfigObsVideo()) {
+                abrirDialogoTokenVideo('A conexão com o Holyrics está funcionando. Agora configure o OBS WebSocket para ativar a prévia de vídeo.');
             }
 
             updateData();
