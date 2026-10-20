@@ -43,7 +43,7 @@ function createCatedralVideoUrl(settings, fullPath) {
   // Reproduce o algoritmo usado pelo módulo Video Sync OBS+.
   var token = h.sha256(fullPath + "#" + settings.token);
   token = h.base64Encode(token);
-  token = token.replaceAll("[^a-zA-Z0-9]", "");
+  token = token.replace(/[^a-zA-Z0-9]/g, "");
   token = token.substring(0, Math.min(20, token.length));
 
   var host = String(settings.ip);
