@@ -1,0 +1,1011 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Controle Catedral — Teste PC</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        * { box-sizing: border-box; }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* ── Layout principal ── */
+        .viewer {
+            flex: 1;
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+        .current {
+            flex: 3;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #333;
+            position: relative;
+        }
+        .next {
+            flex: 1;
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #333;
+            min-width: 250px;
+        }
+        .hidden { display: none !important; }
+
+        #textoContainer, #textoProximo, #atualContainer {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #000;
+        }
+        /* Prévia de vídeo isolada: só substitui o campo Atual enquanto um vídeo toca. */
+        #videoAtual {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: #000;
+            object-fit: contain;
+        }
+        body.modo-texto-ativo #videoAtual { display: none !important; }
+
+        .video-token-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 2500;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 8px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            background: rgba(0,0,0,.82);
+        }
+        .video-token-card {
+            width: min(520px, 100%);
+            max-height: calc(100vh - 16px);
+            max-height: calc(100dvh - 16px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            margin: auto 0;
+            padding: 14px 18px;
+            background: #171717;
+            color: #fff;
+            border: 1px solid #444;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0,0,0,.55);
+        }
+        .video-token-card h3 { margin: 0 0 6px; font-size: 18px; }
+        .video-token-card p { font-size: 12px; line-height: 1.35; color: #ddd; margin: 5px 0 8px; }
+        .video-token-card label { display: block; font-size: 12px; }
+        .video-token-card input {
+            display: block;
+            width: 100%;
+            padding: 7px 10px;
+            margin: 4px 0 8px;
+            background: #050505;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 6px;
+            font-size: 16px;
+            min-height: 36px;
+        }
+        .video-token-actions { display: flex; gap: 10px; margin-top: 6px; }
+        .video-token-actions button {
+            flex: 1;
+            padding: 9px;
+            border: 0;
+            border-radius: 6px;
+            color: #fff;
+            background: #1565c0;
+            font-size: 14px;
+        }
+        .video-token-actions button.secondary { background: #444; }
+        #videoTokenFeedback { display: block; min-height: 18px; color: #ffcc80; font-size: 12px; margin-top: 8px; }
+        @media (orientation: landscape) and (max-height: 520px) {
+            .video-token-overlay { padding: 4px; }
+            .video-token-card {
+                width: min(760px, 100%);
+                max-height: calc(100vh - 8px);
+                max-height: calc(100dvh - 8px);
+                padding: 9px 14px;
+            }
+            .video-token-card h3 { font-size: 16px; margin-bottom: 4px; }
+            .video-token-card p { font-size: 11px; line-height: 1.25; margin: 3px 0 5px; }
+            .video-token-card input { padding: 5px 8px; min-height: 30px; margin: 3px 0 5px; }
+            .video-token-actions button { padding: 7px; }
+        }
+        img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .next-title {
+            padding: 5px;
+            text-align: center;
+            background: #222;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        /* ── Botões de navegação ── */
+        .nav-btn {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            border: none;
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            font-size: 50px;
+            z-index: 1000;
+            outline: none;
+            cursor: pointer;
+        }
+        #btnPrev { left: 10px; }
+        #btnNext { right: 10px; }
+
+        /* Esconde só os botões de navegação no modo texto */
+        body.modo-texto-ativo #btnPrev,
+        body.modo-texto-ativo #btnNext {
+            display: none !important;
+        }
+
+        /* No modo texto: slide atual em tela cheia (esconde painel próximo) */
+        body.modo-texto-ativo .next {
+            display: none !important;
+        }
+        body.modo-texto-ativo .current {
+            flex: 1;
+        }
+
+        /* ── Grupo de botões fixos (canto inferior direito) ── */
+        #btn-grupo {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: row;
+            gap: 12px;
+            z-index: 1000;
+            align-items: center;
+        }
+
+        #btnToggle, #btnPlaylist {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            line-height: 1.2;
+        }
+
+        #btnToggle   { background: #c00; }
+        #btnPlaylist { background: #1565c0; font-size: 32px; }
+
+        #btnPlaylist:hover { background: #1976d2; }
+        #btnPlaylist.ativo { background: #0d47a1; }
+
+        /* ── GAVETA ── */
+        #gaveta {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 0;
+            background: #111;
+            border-top: 2px solid #1565c0;
+            z-index: 999;
+            overflow: hidden;
+            transition: height 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+        #gaveta.aberta { height: 45vh; }
+
+        /* Header da gaveta */
+        .gaveta-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 14px;
+            background: #1a1a2e;
+            flex-shrink: 0;
+            border-bottom: 1px solid #333;
+            gap: 10px;
+        }
+
+        /* ── Abas ── */
+        .gaveta-tabs {
+            display: flex;
+            gap: 4px;
+            flex: 1;
+        }
+        .tab-btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 6px 6px 0 0;
+            background: #2a2a40;
+            color: #888;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+            letter-spacing: 0.5px;
+        }
+        .tab-btn:hover { background: #333355; color: #bbb; }
+        .tab-btn.ativa { background: #1565c0; color: #fff; }
+
+        /* Ações à direita */
+        .gaveta-acoes {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .btn-gaveta-acao {
+            background: #1e3a5f;
+            border: 1px solid #1565c0;
+            border-radius: 6px;
+            color: #90caf9;
+            font-size: 12px;
+            padding: 5px 10px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .btn-gaveta-acao:hover { background: #1565c0; color: #fff; }
+        .btn-fechar-gaveta {
+            background: transparent;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: #aaa;
+            font-size: 18px;
+            line-height: 1;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-fechar-gaveta:hover { background: #333; color: #fff; }
+
+        /* Corpo da gaveta */
+        .gaveta-body {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Status (loading/erro) */
+        .gaveta-status {
+            padding: 18px;
+            text-align: center;
+            color: #888;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        /* Lista de itens */
+        .lista-playlist {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+        .lista-playlist::-webkit-scrollbar { width: 6px; }
+        .lista-playlist::-webkit-scrollbar-track { background: #111; }
+        .lista-playlist::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .lista-playlist::-webkit-scrollbar-thumb:hover { background: #666; }
+
+        /* Itens da lista */
+        .playlist-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            cursor: pointer;
+            border-bottom: 1px solid #1e1e1e;
+            transition: background 0.15s;
+            user-select: none;
+        }
+        .playlist-item:hover { background: #1e2d45; }
+        .playlist-item.ativo {
+            background: #0d2a4a;
+            border-left: 3px solid #42a5f5;
+        }
+        .playlist-item.titulo-secao {
+            background: #161616;
+            cursor: default;
+            padding: 4px 14px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+        .playlist-item.titulo-secao:hover { background: #161616; }
+        .playlist-item.titulo-secao .item-nome {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #4caf50;
+            font-weight: bold;
+        }
+
+        .item-icone {
+            font-size: 18px;
+            flex-shrink: 0;
+            width: 24px;
+            text-align: center;
+        }
+        .item-info { flex: 1; overflow: hidden; }
+        .item-nome {
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: #e0e0e0;
+        }
+        .item-artista {
+            font-size: 11px;
+            color: #666;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .item-tipo {
+            font-size: 10px;
+            color: #555;
+            flex-shrink: 0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .badge-ativo {
+            font-size: 9px;
+            background: #1565c0;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 10px;
+            flex-shrink: 0;
+        }
+
+        /* Spinner */
+        .spinner {
+            display: inline-block;
+            width: 18px; height: 18px;
+            border: 3px solid #333;
+            border-top-color: #1565c0;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="viewer">
+        <div class="current">
+            <video id="videoAtual" class="hidden" playsinline muted preload="auto"></video>
+            <iframe id="atualContainer" src="http://192.168.10.178/stage-view/widescreen"></iframe>
+            <iframe id="textoContainer" class="hidden" src="http://192.168.10.178:80/view/text2"></iframe>
+        </div>
+        <div class="next" id="nextPanel">
+            <div class="next-title">Próximo</div>
+            <img id="nextSlide">
+            <iframe id="textoProximo" class="hidden" src="http://192.168.10.178:80/stage-view/text"></iframe>
+        </div>
+    </div>
+
+    <!-- Botões de navegação -->
+    <button class="nav-btn" id="btnPrev" onclick="sendCmd('ActionPrevious')">◀</button>
+    <button class="nav-btn" id="btnNext" onclick="sendCmd('ActionNext')">▶</button>
+
+    <!-- Grupo de botões inferiores -->
+    <div id="btn-grupo">
+    <button id="btnToggle" onclick="toggleModo()" title="Modo texto">👁️</button>
+    <button id="btnPlaylist" onclick="toggleGaveta()" title="Lista de reprodução">☰</button>
+    </div>
+
+    <!-- Gaveta de playlist -->
+    <div id="gaveta">
+        <div class="gaveta-header">
+            <div class="gaveta-tabs">
+                <button class="tab-btn ativa" id="tab-letras" onclick="trocarAba('letras')">🎵 Letras</button>
+                <button class="tab-btn"        id="tab-midia"  onclick="trocarAba('midia')">🎬 Mídia</button>
+            </div>
+            <div class="gaveta-acoes">
+                <button class="btn-gaveta-acao" onclick="carregarAbaAtual()">↻ Atualizar</button>
+                <button class="btn-fechar-gaveta" onclick="fecharGaveta()">✕</button>
+            </div>
+        </div>
+
+        <!-- Painel Letras -->
+        <div class="gaveta-body" id="painel-letras">
+            <div class="gaveta-status" id="status-letras"></div>
+            <div class="lista-playlist" id="lista-letras"></div>
+        </div>
+
+        <!-- Painel Mídia -->
+        <div class="gaveta-body hidden" id="painel-midia">
+            <div class="gaveta-status" id="status-midia"></div>
+            <div class="lista-playlist" id="lista-midia"></div>
+        </div>
+    </div>
+
+    <script>
+        const DEFAULT_HOLYRICS_IP = "192.168.10.178";
+        const HOLYRICS_IP_KEY = "catedralHolyricsServerIp";
+        const HOLYRICS_API_PORT = 4545;
+        const TOKEN = "A9DDQuW0b3CZhc5p";
+
+        function getHolyricsIp() {
+            const saved = (localStorage.getItem(HOLYRICS_IP_KEY) || '').trim();
+            return saved || DEFAULT_HOLYRICS_IP;
+        }
+
+        function getHolyricsApiBase() {
+            return 'http://' + getHolyricsIp() + ':' + HOLYRICS_API_PORT;
+        }
+
+        function aplicarEnderecoHolyricsNasTelas() {
+            const base = 'http://' + getHolyricsIp();
+            const atual = document.getElementById('atualContainer');
+            const texto = document.getElementById('textoContainer');
+            const proximo = document.getElementById('textoProximo');
+            if (atual) atual.src = base + '/stage-view/widescreen';
+            if (texto) texto.src = base + ':80/view/text2';
+            if (proximo) proximo.src = base + ':80/stage-view/text';
+        }
+
+        let modoTexto    = false;
+        let gavetaAberta = false;
+        let abaAtual     = 'letras';
+        let proximoVisivel = true;
+        let lastSlideNumber = null;
+
+        // Prévia de vídeo recebida por POST direto do módulo do Holyrics.
+        // A conexão com o OBS não participa deste fluxo.
+        const VIDEO_PREVIEW_RECEIVER_PORT = 8766;
+        const VIDEO_PREVIEW_PC_POLL_MS = 350;
+        let videoPreviewUrl = '';
+        let videoPreviewPath = '';
+        let videoPreviewActive = false;
+        let videoPreviewErrorUrl = '';
+        let latestMediaPlayerInfo = null;
+        let lastReceivedPreviewSignature = '';
+        let videoPreviewReceiverTimer = null;
+        let videoPreviewReceiverPlugin = null;
+
+        /* ── WAKE LOCK (mantém tela ligada) ── */
+        let wakeLock = null;
+        async function ativarWakeLock() {
+            if (!('wakeLock' in navigator)) {
+                console.log('Wake Lock não suportado neste navegador');
+                return;
+            }
+            try {
+                wakeLock = await navigator.wakeLock.request('screen');
+                console.log('✅ Tela mantida ligada (Wake Lock ativo)');
+                wakeLock.addEventListener('release', () => {
+                    console.log('Wake Lock liberado (o sistema pode dormir se inativo)');
+                });
+            } catch (e) {
+                console.log('Não foi possível ativar Wake Lock:', e);
+            }
+        }
+        // Reativa o Wake Lock se o iPad voltar do lock ou troca de app
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && wakeLock === null) {
+                ativarWakeLock();
+            }
+        });
+        // Pede o primeiro Wake Lock no primeiro toque em qualquer lugar (regra do iOS)
+        document.addEventListener('click', () => {
+            if (wakeLock === null) ativarWakeLock();
+        }, { once: true });
+
+        const abas = {
+            letras: { items: [], idAtivo: null, carregada: false },
+            midia:  { items: [], idAtivo: null, carregada: false }
+        };
+
+        /* ── MODO TEXTO ── */
+        function toggleModo() {
+            modoTexto = !modoTexto;
+            document.body.classList.toggle('modo-texto-ativo', modoTexto);
+            document.getElementById('atualContainer').classList.toggle('hidden', modoTexto);
+            document.getElementById('textoContainer').classList.toggle('hidden', !modoTexto);
+            document.getElementById('nextSlide').classList.toggle('hidden', modoTexto);
+            document.getElementById('textoProximo').classList.toggle('hidden', !modoTexto);
+            document.getElementById('btnToggle').style.background = modoTexto ? '#0a0' : '#c00';
+        }
+
+        /* ── PAINEL PRÓXIMO (só no modo texto) ── */
+        function toggleProximo() {
+            mostrarProximo(!proximoVisivel);
+        }
+        function mostrarProximo(visivel) {
+            proximoVisivel = visivel;
+            document.getElementById('nextPanel').classList.toggle('hidden', !visivel);
+            const btn = document.getElementById('btnProximo');
+            btn.classList.toggle('oculto', !visivel);
+            btn.innerHTML = (visivel ? '🙈' : '👁️') + '<span class="label">Próximo</span>';
+        }
+
+        /* ── API ── */
+        async function api(action, body = {}) {
+            const host = getHolyricsIp();
+            const proxyUrl = '/__proxy/api/' + encodeURIComponent(action) +
+                '?host=' + encodeURIComponent(host) + '&token=' + encodeURIComponent(TOKEN);
+            const r = await fetch(proxyUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            return r.json();
+        }
+
+        async function sendCmd(action) {
+            try {
+                await api(action);
+                if (!modoTexto) updateData();
+            } catch(e) { console.error(e); }
+        }
+
+        /* ── PRÉVIA DE VÍDEO: URL enviada pelo módulo do Holyrics ── */
+        function mostrarVideoAtual() {
+            if (modoTexto) return;
+            videoPreviewActive = true;
+            document.getElementById('atualContainer').classList.add('hidden');
+            document.getElementById('videoAtual').classList.remove('hidden');
+        }
+
+        function restaurarAtualHolyrics() {
+            videoPreviewActive = false;
+            const video = document.getElementById('videoAtual');
+            video.classList.add('hidden');
+            video.pause();
+            document.getElementById('atualContainer').classList.toggle('hidden', modoTexto);
+        }
+
+        function limparPreviaRecebida() {
+            const video = document.getElementById('videoAtual');
+            restaurarAtualHolyrics();
+            video.onerror = null;
+            video.onloadedmetadata = null;
+            video.oncanplay = null;
+            video.removeAttribute('src');
+            video.load();
+            videoPreviewUrl = '';
+            videoPreviewPath = '';
+            videoPreviewErrorUrl = '';
+            lastReceivedPreviewSignature = '';
+        }
+
+        function sincronizarTempoVideo(info) {
+            const video = document.getElementById('videoAtual');
+            if (!info) return;
+
+            const currentMs = Number(info.time_ms);
+            if (video.readyState >= 1 && Number.isFinite(currentMs) && currentMs >= 0) {
+                const wanted = currentMs / 1000;
+                if (Math.abs(video.currentTime - wanted) > 1.25) {
+                    try { video.currentTime = wanted; } catch (_) {}
+                }
+            }
+
+            if (info.playing === true) {
+                if (video.paused) video.play().catch(() => {});
+            } else if (!video.paused) {
+                video.pause();
+            }
+        }
+
+        function receberUrlVideoModulo(payload) {
+            if (!payload || payload.available === false) {
+                if (videoPreviewUrl || videoPreviewActive) limparPreviaRecebida();
+                return;
+            }
+
+            const rawUrl = String(payload.url || '').trim();
+            if (!rawUrl) return;
+
+            let url;
+            try {
+                url = new URL(rawUrl);
+            } catch (_) {
+                console.warn('Prévia Catedral: o módulo enviou uma URL inválida.');
+                return;
+            }
+
+            if ((url.protocol !== 'http:' && url.protocol !== 'https:') ||
+                !/\/get_video\/?$/i.test(url.pathname)) {
+                console.warn('Prévia Catedral: a URL recebida não é um endereço /get_video HTTP(S).');
+                return;
+            }
+
+            const signature = rawUrl + '|' + String(payload.updated_at || '');
+            if (signature === lastReceivedPreviewSignature || rawUrl === videoPreviewUrl) {
+                if (payload.path) videoPreviewPath = String(payload.path);
+                return;
+            }
+
+            lastReceivedPreviewSignature = signature;
+            videoPreviewUrl = rawUrl;
+            videoPreviewPath = String(payload.path || payload.name || '');
+            videoPreviewErrorUrl = '';
+
+            if (modoTexto) return;
+
+            const video = document.getElementById('videoAtual');
+            video.pause();
+            video.onerror = () => {
+                if (videoPreviewUrl !== rawUrl) return;
+                videoPreviewErrorUrl = rawUrl;
+                restaurarAtualHolyrics();
+                console.warn('Prévia Catedral: o endereço recebido do módulo não pôde ser reproduzido. Verifique se o tablet alcança o IP/porta do serviço de vídeo do Holyrics.');
+            };
+            video.onloadedmetadata = () => {
+                if (videoPreviewUrl !== rawUrl) return;
+                if (latestMediaPlayerInfo) sincronizarTempoVideo(latestMediaPlayerInfo);
+            };
+            video.oncanplay = () => {
+                if (videoPreviewUrl !== rawUrl) return;
+                mostrarVideoAtual();
+                if (!latestMediaPlayerInfo || latestMediaPlayerInfo.playing === true) {
+                    video.play().catch(() => {});
+                } else {
+                    sincronizarTempoVideo(latestMediaPlayerInfo);
+                }
+            };
+            video.src = rawUrl;
+            video.load();
+            video.play().catch(() => {});
+        }
+
+        async function consultarUltimaPreviaPC() {
+            try {
+                const response = await fetch('/__receiver/video-preview/latest', { cache: 'no-store' });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (payload && payload.available && payload.url) {
+                    receberUrlVideoModulo(payload);
+                }
+            } catch (_) {
+                // O endpoint existe apenas no servidor local de teste para PC.
+            }
+        }
+
+        async function iniciarReceptorPreviaVideo() {
+            const capacitor = window.Capacitor;
+            const plugin = capacitor && capacitor.Plugins && capacitor.Plugins.VideoPreviewServer;
+
+            if (plugin) {
+                videoPreviewReceiverPlugin = plugin;
+                try {
+                    await plugin.addListener('videoPreviewReceived', function (payload) {
+                        receberUrlVideoModulo(payload);
+                    });
+                    const info = await plugin.start({ port: VIDEO_PREVIEW_RECEIVER_PORT });
+                    console.info('Receptor da prévia ativo:', info);
+                    if (info && info.lastPayload) receberUrlVideoModulo(info.lastPayload);
+                    return;
+                } catch (error) {
+                    console.error('Não foi possível iniciar o receptor nativo da prévia:', error);
+                }
+            }
+
+            // Modo PC: o servidor PowerShell local simula o endpoint nativo.
+            if (String(window.location.port) === String(VIDEO_PREVIEW_RECEIVER_PORT)) {
+                await consultarUltimaPreviaPC();
+                if (videoPreviewReceiverTimer) clearInterval(videoPreviewReceiverTimer);
+                videoPreviewReceiverTimer = setInterval(consultarUltimaPreviaPC, VIDEO_PREVIEW_PC_POLL_MS);
+            } else {
+                console.warn('Receptor HTTP da prévia não encontrado. Esta versão precisa do receptor nativo ou do servidor local de teste.');
+            }
+        }
+
+        function caminhoVideoAtual(info) {
+            let path = String(info.relative_path || info.name || '').trim();
+            path = path.replace(/^video[\\/]/i, '');
+            if (!path && info.path) {
+                const fullPath = String(info.path);
+                const marker = '\\media\\video\\';
+                const index = fullPath.toLowerCase().lastIndexOf(marker);
+                path = index >= 0 ? fullPath.slice(index + marker.length) : fullPath.split(/[\\/]/).pop();
+            }
+            return path.replace(/\\/g, '/');
+        }
+
+        function pareceVideo(info) {
+            const path = String(info.relative_path || info.name || info.path || '');
+            return /\.(mp4|m4v|mov|webm|mkv|avi|mpg|mpeg|3gp)$/i.test(path);
+        }
+
+        async function atualizarPreviaVideo() {
+            try {
+                const result = await api('GetMediaPlayerInfo');
+                if (!result || result.status !== 'ok' || !result.data) return;
+
+                const info = result.data;
+                latestMediaPlayerInfo = info;
+                const duration = Number(info.duration_ms);
+                const elapsed = Number(info.time_ms);
+                const active = pareceVideo(info) &&
+                    (info.playing === true ||
+                     (Number.isFinite(duration) && duration > 0 &&
+                      Number.isFinite(elapsed) && elapsed >= 0 && elapsed < duration));
+
+                if (!active) {
+                    if (videoPreviewUrl || videoPreviewActive) {
+                        limparPreviaRecebida();
+                    }
+                    return;
+                }
+
+                if (modoTexto || !videoPreviewUrl || videoPreviewErrorUrl === videoPreviewUrl) return;
+
+                const video = document.getElementById('videoAtual');
+                if (video.readyState >= 1) sincronizarTempoVideo(info);
+                if (video.readyState >= 2) mostrarVideoAtual();
+            } catch (error) {
+                // A falha da prévia não interfere nas demais funções do aplicativo.
+                console.warn('Não foi possível atualizar a sincronização da prévia:', error);
+            } finally {
+                setTimeout(atualizarPreviaVideo, 1000);
+            }
+        }
+
+        /* ── LOOP DE SLIDE ── */
+        async function updateData() {
+            if (modoTexto) { setTimeout(updateData, 2000); return; }
+            try {
+                const j = await api('GetCurrentPresentation', {
+                    include_slides: true,
+                    include_slide_preview: true
+                });
+                if (j.status === 'ok' && j.data) {
+                    const atual = Number(j.data.slide_number);
+                    // Só recarrega o iframe quando o slide MUDA (evita reiniciar o vídeo a cada 2s)
+                    if (atual !== lastSlideNumber) {
+                        lastSlideNumber = atual;
+                        document.getElementById('atualContainer').src = 'http://' + getHolyricsIp() + '/stage-view/widescreen?_=' + Date.now();
+                    }
+                    if (j.data.slides && j.data.slides[atual]) {
+                        document.getElementById('nextSlide').src =
+                            'data:image/jpeg;base64,' + j.data.slides[atual].preview;
+                    }
+                }
+            } catch(e) { /* silencioso */ }
+            setTimeout(updateData, 2000);
+        }
+
+        /* ── GAVETA ── */
+        function toggleGaveta() {
+            gavetaAberta ? fecharGaveta() : abrirGaveta();
+        }
+        function abrirGaveta() {
+            gavetaAberta = true;
+            document.getElementById('gaveta').classList.add('aberta');
+            document.getElementById('btnPlaylist').classList.add('ativo');
+            if (!abas[abaAtual].carregada) carregarAba(abaAtual);
+        }
+        function fecharGaveta() {
+            gavetaAberta = false;
+            document.getElementById('gaveta').classList.remove('aberta');
+            document.getElementById('btnPlaylist').classList.remove('ativo');
+        }
+        function trocarAba(aba) {
+            if (aba === abaAtual) return;
+            abaAtual = aba;
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('ativa'));
+            document.getElementById('tab-' + aba).classList.add('ativa');
+            document.getElementById('painel-letras').classList.toggle('hidden', aba !== 'letras');
+            document.getElementById('painel-midia').classList.toggle('hidden',  aba !== 'midia');
+            if (!abas[aba].carregada) carregarAba(aba);
+        }
+        function carregarAbaAtual() {
+            abas[abaAtual].carregada = false;
+            carregarAba(abaAtual);
+        }
+
+        /* ── CARREGAMENTO ── */
+        async function carregarAba(aba) {
+            const statusEl = document.getElementById('status-' + aba);
+            const listaEl  = document.getElementById('lista-'  + aba);
+            statusEl.innerHTML = '<span class="spinner"></span> Carregando…';
+            listaEl.innerHTML  = '';
+            try {
+                const endpoint = aba === 'letras' ? 'GetLyricsPlaylist' : 'GetMediaPlaylist';
+                const j = await api(endpoint);
+                if (j.status !== 'ok' || !Array.isArray(j.data)) {
+                    statusEl.textContent = '⚠️ Lista vazia ou não disponível.';
+                    return;
+                }
+                abas[aba].items    = j.data;
+                abas[aba].carregada = true;
+                statusEl.innerHTML = '';
+                renderAba(aba);
+            } catch(e) {
+                statusEl.textContent = '❌ Erro ao conectar ao Holyrics.';
+            }
+        }
+
+        /* ── RENDER ── */
+        const ICONES = {
+            title: '▬', song: '🎵', verse: '📖', text: '📝',
+            audio: '🔊', video: '🎬', image: '🖼️', file: '📄',
+            announcement: '📢', automatic_presentation: '▶',
+            countdown: '⏱️', countdown_cp: '⏱️', cp_text: '📝',
+            plain_text: '📝', uri: '🔗', global_action: '⚙️',
+            api: '⚡', script: '💻',
+        };
+
+        function nomeArquivo(path) {
+            if (!path) return '—';
+            return path.split(/[/\\]/).pop();
+        }
+
+        function renderAba(aba) {
+            const lista  = document.getElementById('lista-' + aba);
+            const estado = abas[aba];
+            lista.innerHTML = '';
+
+            if (!estado.items.length) {
+                lista.innerHTML = '<div style="padding:20px;text-align:center;color:#555">Lista vazia</div>';
+                return;
+            }
+
+            estado.items.forEach(item => {
+                const tipo     = item.type || 'file';
+                const nome     = item.title || nomeArquivo(item.name);
+                const artista  = item.artist || '';
+                const esTitulo = tipo === 'title';
+                const ativo    = item.id && item.id === estado.idAtivo;
+
+                const div = document.createElement('div');
+                div.className = 'playlist-item' +
+                    (esTitulo ? ' titulo-secao' : '') +
+                    (ativo    ? ' ativo'         : '');
+
+                if (!esTitulo) {
+                    div.title = nome + (artista ? ' — ' + artista : '');
+                    div.addEventListener('click', () => acionarItem(aba, item.id));
+                }
+
+                const iconeEl = document.createElement('span');
+                iconeEl.className   = 'item-icone';
+                iconeEl.textContent = ICONES[tipo] || (aba === 'letras' ? '🎵' : '📄');
+
+                const infoEl = document.createElement('div');
+                infoEl.className = 'item-info';
+
+                const nomeEl = document.createElement('div');
+                nomeEl.className   = 'item-nome';
+                nomeEl.textContent = nome;
+                infoEl.appendChild(nomeEl);
+
+                if (artista && !esTitulo) {
+                    const artistaEl = document.createElement('div');
+                    artistaEl.className   = 'item-artista';
+                    artistaEl.textContent = artista;
+                    infoEl.appendChild(artistaEl);
+                }
+
+                div.appendChild(iconeEl);
+                div.appendChild(infoEl);
+
+                if (!esTitulo) {
+                    const tipoEl = document.createElement('span');
+                    tipoEl.className   = 'item-tipo';
+                    tipoEl.textContent = tipo !== 'song' ? tipo : '';
+                    div.appendChild(tipoEl);
+
+                    if (ativo) {
+                        const badge = document.createElement('span');
+                        badge.className   = 'badge-ativo';
+                        badge.textContent = '▶';
+                        div.appendChild(badge);
+                    }
+                }
+
+                lista.appendChild(div);
+            });
+        }
+
+        /* ── ACIONAR ITEM ── */
+        async function acionarItem(aba, id) {
+            if (!id) return;
+            try {
+                const endpoint = aba === 'letras' ? 'ShowLyrics' : 'MediaPlaylistAction';
+                const j = await api(endpoint, { id });
+                if (j.status === 'ok') {
+                    abas[aba].idAtivo = id;
+                    renderAba(aba);
+                    const el = document.querySelector('.playlist-item.ativo');
+                    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            } catch(e) {
+                console.error('Erro ao acionar item:', e);
+            }
+        }
+
+        /* ── Inicialização e recuperação de IP do Holyrics ── */
+        // Alguns servidores Holyrics respondem ao GetMediaPlayerInfo mesmo quando
+        // GetCurrentPresentation retorna erro; qualquer endpoint conhecido que responda
+        // corretamente confirma a conexão para evitar falsos alertas de IP.
+        async function testarConexaoHolyrics() {
+            try {
+                const apresentacao = await api('GetCurrentPresentation', {});
+                if (apresentacao && apresentacao.status === 'ok') return true;
+            } catch (_) {}
+
+            try {
+                const player = await api('GetMediaPlayerInfo', {});
+                if (player && player.status === 'ok' && player.data) return true;
+            } catch (_) {}
+
+            return false;
+        }
+
+        async function iniciarAplicativo() {
+            aplicarEnderecoHolyricsNasTelas();
+            let conexaoHolyricsConfirmada = await testarConexaoHolyrics();
+
+            if (!conexaoHolyricsConfirmada) {
+                const atual = getHolyricsIp();
+                const resposta = prompt(
+                    'Não consegui confirmar a conexão com o Holyrics no endereço ' + atual + '.\\n\\n' +
+                    'Digite o IP atual do computador onde o Holyrics está aberto.',
+                    atual
+                );
+
+                if (resposta !== null && resposta.trim()) {
+                    const novoIp = resposta.trim()
+                        .replace(/^https?:\/\//i, '')
+                        .replace(/\/+$/, '')
+                        .replace(/:\d+$/, '');
+
+                    if (!novoIp || /[\s/?#]/.test(novoIp)) {
+                        alert('Endereço inválido. Digite somente o IP ou nome do computador.');
+                    } else {
+                        localStorage.setItem(HOLYRICS_IP_KEY, novoIp);
+                        aplicarEnderecoHolyricsNasTelas();
+                        conexaoHolyricsConfirmada = await testarConexaoHolyrics();
+
+                        if (!conexaoHolyricsConfirmada) {
+                            alert('Não consegui confirmar uma resposta válida da API do Holyrics em ' + novoIp + '.');
+                        }
+                    }
+                }
+                aplicarEnderecoHolyricsNasTelas();
+            }
+
+            // Inicia o receptor HTTP da URL enviada pelo módulo. Nenhuma conexão com
+            // OBS é necessária para exibir a prévia no campo Atual.
+            await iniciarReceptorPreviaVideo();
+            updateData();
+            atualizarPreviaVideo();
+        }
+
+        iniciarAplicativo();
+    </script>
+</body>
+</html>
