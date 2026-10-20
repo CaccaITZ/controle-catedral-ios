@@ -579,9 +579,9 @@
             }
         }
 
-        function abrirDialogoTokenVideo(message = '') {
+        function abrirDialogoTokenVideo(message = '', configOverride = null) {
             const overlay = document.getElementById('videoTokenOverlay');
-            const cfg = carregarConfigObsVideo();
+            const cfg = configOverride || carregarConfigObsVideo();
             document.getElementById('obsWsHostInput').value =
                 (cfg && cfg.host) || getHolyricsIp();
             document.getElementById('obsWsPortInput').value = (cfg && cfg.port) || '';
@@ -892,6 +892,10 @@
                 atualizarPreviaVideo();
                 console.log('Prévia Catedral: conexão OBS validada; fonte de vídeo encontrada.');
             } catch (error) {
+                // Não deixar uma configuração inválida marcada como salva:
+                // isso impedia a janela de reaparecer na próxima abertura do app.
+                localStorage.removeItem(OBS_VIDEO_CONFIG_KEY);
+                limparConexaoObsVideo();
                 feedback.textContent = error && error.message
                     ? error.message
                     : 'Não foi possível consultar a fonte do OBS. Confira a configuração e tente novamente.';
@@ -1280,8 +1284,25 @@
                 aplicarEnderecoHolyricsNasTelas();
             }
 
-            if (conexaoHolyricsConfirmada && !carregarConfigObsVideo()) {
-                abrirDialogoTokenVideo('A conexão com o Holyrics está funcionando. Agora configure o OBS WebSocket para ativar a prévia de vídeo.');
+            if (conexaoHolyricsConfirmada) {
+                const cfgObs = carregarConfigObsVideo();
+                if (!cfgObs) {
+                    abrirDialogoTokenVideo('A conexão com o Holyrics está funcionando. Agora configure o OBS WebSocket para ativar a prévia de vídeo.');
+                } else {
+                    try {
+                        // Revalidar configurações antigas, inclusive as salvas por versões
+                        // anteriores que podiam gravar os dados mesmo após falha de conexão.
+                        await validarConexaoObsVideo(cfgObs);
+                    } catch (erroObs) {
+                        localStorage.removeItem(OBS_VIDEO_CONFIG_KEY);
+                        limparConexaoObsVideo();
+                        abrirDialogoTokenVideo(
+                            'A configuração anterior do OBS não foi validada. Confira os dados e teste novamente. ' +
+                            (erroObs && erroObs.message ? erroObs.message : ''),
+                            cfgObs
+                        );
+                    }
+                }
             }
 
             updateData();
