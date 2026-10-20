@@ -2,10 +2,9 @@
  * Prévia de vídeo — Catedral
  * Holyrics 2.24+
  *
- * Publica no estado global do Holyrics o endereço reproduzível do vídeo
- * que começou a ser exibido. A URL é calculada com a mesma lógica do
- * módulo oficial/comunitário Video Sync OBS+, usando a configuração local
- * de vídeo do Holyrics. Não altera nem controla o OBS.
+ * Detecta o vídeo exibido no Holyrics e publica sua URL no estado global.
+ * A URL aponta para o serviço HTTP de vídeo configurado no Plugin do Holyrics.
+ * O módulo não controla nem precisa de uma conexão com o OBS.
  */
 
 var CATEDRAL_VIDEO_PREVIEW_KEY = "@catedral#video_preview";
@@ -14,11 +13,33 @@ function info() {
   return {
     id: "catedral_video_preview",
     name: "Prévia de Vídeo — Catedral",
-    description: "Compartilha com o aplicativo Catedral o endereço do vídeo exibido no Holyrics, inclusive vídeos cujo nome começa com !.",
+    description: "Compartilha com o aplicativo Catedral o endereço do vídeo exibido no Holyrics.",
     min_version: "2.24.0",
     available_in_main_window: true,
     available_in_bible_window: false
   };
+}
+
+/*
+ * O host pode ser definido nas configurações deste módulo.
+ * Se ficar vazio, usa o IP informado na configuração do serviço de vídeo.
+ * Para testar no navegador do próprio PC, pode-se usar 127.0.0.1.
+ * Para celulares/tablets, use o IP da rede local do PC que executa Holyrics.
+ */
+function settings() {
+  return [
+    {
+      type: "title",
+      label: "Endereço para reprodução da prévia"
+    },
+    {
+      id: "video_url_host",
+      name: "IP/host do servidor de vídeo",
+      description: "Endereço que o aparelho que reproduz a prévia consegue acessar. Use 127.0.0.1 somente no próprio PC; para outros aparelhos, use o IP de rede do computador Holyrics. Deixe vazio para usar o IP da configuração do serviço de vídeo.",
+      type: "string",
+      default_value: ""
+    }
+  ];
 }
 
 function readPluginVideoSettings() {
@@ -28,25 +49,32 @@ function readPluginVideoSettings() {
     try {
       var raw = h.readFileAsText(candidates[i]);
       var parsed = JSON.parse(raw);
-      if (parsed && parsed.ip && parsed.port && parsed.token) {
+      if (parsed && parsed.port && parsed.token) {
         return parsed;
       }
     } catch (e) {
-      // Try the next supported location.
+      // Tenta o próximo local suportado.
     }
   }
 
   return null;
 }
 
-function createCatedralVideoUrl(settings, fullPath) {
-  // Reproduce o algoritmo usado pelo módulo Video Sync OBS+.
+function createCatedralVideoUrl(settings, fullPath, module) {
   var token = h.sha256(fullPath + "#" + settings.token);
   token = h.base64Encode(token);
   token = token.replace(/[^a-zA-Z0-9]/g, "");
   token = token.substring(0, Math.min(20, token.length));
 
-  var host = String(settings.ip);
+  var configuredHost = String(
+    module && module.settings && module.settings.video_url_host || ""
+  ).trim();
+  var host = configuredHost || String(settings.ip || "").trim();
+
+  if (!host) {
+    throw new Error("O host do servidor de vídeo não está configurado.");
+  }
+
   var port = String(settings.port);
   var portPart = port === "80" ? "" : ":" + port;
 
@@ -55,7 +83,7 @@ function createCatedralVideoUrl(settings, fullPath) {
     "&token=" + token;
 }
 
-function publishCatedralVideoPreview(obj) {
+function publishCatedralVideoPreview(obj, module) {
   var fullPath = String(obj && obj.file_fullname || "").trim();
 
   if (!fullPath) {
@@ -67,19 +95,19 @@ function publishCatedralVideoPreview(obj) {
     return;
   }
 
-  var settings = readPluginVideoSettings();
-  if (!settings) {
+  var videoSettings = readPluginVideoSettings();
+  if (!videoSettings) {
     h.setGlobal(CATEDRAL_VIDEO_PREVIEW_KEY, {
       available: false,
       path: fullPath,
-      message: "Não foi possível ler a configuração de vídeo do Holyrics. Verifique se o módulo Video Sync OBS+ está configurado.",
+      message: "Não foi possível ler a configuração do serviço HTTP de vídeo do Plugin do Holyrics. Verifique se o serviço está configurado.",
       updated_at: new Date().getTime()
     });
     return;
   }
 
   try {
-    var url = createCatedralVideoUrl(settings, fullPath);
+    var url = createCatedralVideoUrl(videoSettings, fullPath, module);
     var normalized = fullPath.replace(/\\/g, "/");
     var fileName = normalized.substring(normalized.lastIndexOf("/") + 1);
 
@@ -94,7 +122,7 @@ function publishCatedralVideoPreview(obj) {
     h.setGlobal(CATEDRAL_VIDEO_PREVIEW_KEY, {
       available: false,
       path: fullPath,
-      message: "Falha ao gerar o endereço de reprodução do vídeo.",
+      message: String(e && e.message || "Falha ao gerar o endereço de reprodução do vídeo."),
       updated_at: new Date().getTime()
     });
   }
@@ -113,7 +141,7 @@ function triggers(module) {
     when: "displaying",
     item: "any_video",
     action: function (obj) {
-      publishCatedralVideoPreview(obj);
+      publishCatedralVideoPreview(obj, module);
     }
   }];
 }
