@@ -615,7 +615,8 @@
                 (cfg && cfg.inputName) || 'VIDEO HOLYRICS';
             document.getElementById('videoTokenFeedback').textContent = message;
             overlay.classList.remove('hidden');
-            setTimeout(() => document.getElementById('obsWsHostInput').focus(), 100);
+            // Não abrir o teclado virtual automaticamente: em paisagem ele cobria
+            // os campos restantes antes de o usuário conseguir rolar o formulário.
         }
 
         function fecharDialogoTokenVideo() {
