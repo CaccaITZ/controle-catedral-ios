@@ -29,9 +29,10 @@ jobs:
 
       - name: Recuperar ícone e splash da versão estável
         run: |
-          python3 -m pip install --user Pillow
+          python3 -m venv .venv-assets
+          .venv-assets/bin/pip install Pillow
           mkdir -p assets
-          python3 - <<'PY'
+          .venv-assets/bin/python - <<'PY'
           from pathlib import Path
           from PIL import Image
 
