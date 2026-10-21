@@ -27,7 +27,47 @@ jobs:
       - name: 🍎 Adicionar plataforma iOS
         run: npx cap add ios
 
-      - name: 🔧 Configurar Info.plist (permissões e orientação)
+      - name: Recuperar ícone e splash da versão estável
+        run: |
+          python3 -m pip install --user Pillow
+          mkdir -p assets
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          OUT = Path("assets")
+          OUT.mkdir(exist_ok=True)
+
+          def load_rgba(path):
+              p = Path(path)
+              if not p.is_file():
+                  raise SystemExit(f"Asset de marca não encontrado: {path}")
+              return Image.open(p).convert("RGBA")
+
+          def place_center(source, canvas_size, max_content_size, background=(0, 0, 0, 0)):
+              canvas = Image.new("RGBA", (canvas_size, canvas_size), background)
+              source = source.copy()
+              source.thumbnail((max_content_size, max_content_size), Image.Resampling.LANCZOS)
+              x = (canvas_size - source.width) // 2
+              y = (canvas_size - source.height) // 2
+              canvas.alpha_composite(source, (x, y))
+              return canvas
+
+          icon = load_rgba("www/icone.png")
+          place_center(icon, 1024, 1024).save(OUT / "icon-only.png")
+          place_center(icon, 1024, 660).save(OUT / "icon-foreground.png")
+          Image.new("RGBA", (1024, 1024), (0, 0, 0, 255)).save(OUT / "icon-background.png")
+
+          # Usa a logo da versão estável na splash nativa, em fundo preto.
+          logo = load_rgba("www/logo500.png")
+          splash = place_center(logo, 2732, 1650, (0, 0, 0, 255))
+          splash.save(OUT / "splash.png")
+          splash.save(OUT / "splash-dark.png")
+          print("Assets de ícone e splash preparados.")
+          PY
+          npx @capacitor/assets generate --ios --assetPath assets --iosProject ios/App
+
+      - name: 🔧 Configurar Info.plist (permissões, orientação e versão V7)
         run: |
           PLIST="ios/App/App/Info.plist"
           PB=/usr/libexec/PlistBuddy
@@ -46,8 +86,12 @@ jobs:
           $PB -c "Add :UISupportedInterfaceOrientations array" $PLIST
           $PB -c "Add :UISupportedInterfaceOrientations:UIInterfaceOrientationLandscapeLeft string UIInterfaceOrientationLandscapeLeft" $PLIST
           $PB -c "Add :UISupportedInterfaceOrientations:UIInterfaceOrientationLandscapeRight string UIInterfaceOrientationLandscapeRight" $PLIST
+
+          # 4. V7 — versão visível e número de build nativo
+          $PB -c "Set :CFBundleShortVersionString 7.0.0" $PLIST
+          $PB -c "Set :CFBundleVersion 7" $PLIST
           
-          echo "✅ Info.plist configurado"
+          echo "✅ Info.plist configurado para a versão 7.0.0"
 
       - name: 📋 Instalar CocoaPods
         run: |
