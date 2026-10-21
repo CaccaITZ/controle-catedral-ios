@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, v7-estavel-20261021]
   workflow_dispatch:
 
 jobs:
@@ -31,7 +31,65 @@ jobs:
       - name: Adicionar plataforma Android
         run: npx cap add android
 
-      - name: Permitir HTTP local e fixar orientação horizontal
+      - name: Recuperar o ícone e a splash da versão estável
+        run: |
+          python3 -m pip install --user Pillow
+          mkdir -p assets
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageOps
+
+          OUT = Path("assets")
+          OUT.mkdir(exist_ok=True)
+
+          def load_rgba(path):
+              p = Path(path)
+              if not p.is_file():
+                  raise SystemExit(f"Asset de marca não encontrado: {path}")
+              return Image.open(p).convert("RGBA")
+
+          def place_center(source, canvas_size, max_content_size, background=(0, 0, 0, 0)):
+              canvas = Image.new("RGBA", (canvas_size, canvas_size), background)
+              source = source.copy()
+              source.thumbnail((max_content_size, max_content_size), Image.Resampling.LANCZOS)
+              x = (canvas_size - source.width) // 2
+              y = (canvas_size - source.height) // 2
+              canvas.alpha_composite(source, (x, y))
+              return canvas
+
+          # Mantém os arquivos de marca originais em www; usa cópias dimensionadas
+          # somente para produzir os recursos nativos Android.
+          icon = load_rgba("www/icone.png")
+          icon_only = place_center(icon, 1024, 1024)
+          icon_only.save(OUT / "icon-only.png")
+
+          # Camada foreground dentro da área segura dos ícones adaptativos Android.
+          icon_foreground = place_center(icon, 1024, 660)
+          icon_foreground.save(OUT / "icon-foreground.png")
+
+          icon_background = Image.new("RGBA", (1024, 1024), (0, 0, 0, 255))
+          icon_background.save(OUT / "icon-background.png")
+
+          # A logo secundária da versão estável é preservada como tela de abertura.
+          logo = load_rgba("www/logo500.png")
+          splash = place_center(logo, 2732, 1650, (0, 0, 0, 255))
+          splash.save(OUT / "splash.png")
+          splash.save(OUT / "splash-dark.png")
+
+          for asset in ("icon-only.png", "icon-foreground.png", "icon-background.png"):
+              with Image.open(OUT / asset) as img:
+                  if img.size != (1024, 1024):
+                      raise SystemExit(f"Dimensão inválida para {asset}: {img.size}")
+          for asset in ("splash.png", "splash-dark.png"):
+              with Image.open(OUT / asset) as img:
+                  if img.size != (2732, 2732):
+                      raise SystemExit(f"Dimensão inválida para {asset}: {img.size}")
+
+          print("Ícone e splash preparados a partir de www/icone.png e www/logo500.png.")
+          PY
+          npx @capacitor/assets generate --android --assetPath assets --androidProject android
+
+      - name: Permitir HTTP local, fixar orientação e definir versão V7
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -56,7 +114,28 @@ jobs:
                   manifest = manifest[:activity.start()] + new_activity_tag + manifest[activity.end():]
 
           path.write_text(manifest, encoding="utf-8")
-          print("AndroidManifest configurado para HTTP e orientação horizontal.")
+
+          gradle_path = Path("android/app/build.gradle")
+          gradle = gradle_path.read_text(encoding="utf-8")
+          gradle, n_code = re.subn(
+              r"(?m)^(\s*versionCode\s*=?\s*)\d+\s*$",
+              r"\g<1>7",
+              gradle,
+              count=1,
+          )
+          gradle, n_name = re.subn(
+              r"(?m)^(\s*versionName\s*=?\s*)[\'\"].*?[\'\"].*$",
+              r'\g<1>"7.0.0"',
+              gradle,
+              count=1,
+          )
+          if n_code != 1 or n_name != 1:
+              raise SystemExit(
+                  f"Não foi possível definir a versão nativa V7 (versionCode={n_code}, versionName={n_name})."
+              )
+          gradle_path.write_text(gradle, encoding="utf-8")
+
+          print("AndroidManifest configurado; versionCode=7 e versionName=7.0.0.")
           PY
 
       - name: Sincronizar arquivos do aplicativo
@@ -71,7 +150,7 @@ jobs:
       - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: controle-catedral-android-apk
+          name: controle-catedral-v7-estavel-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
