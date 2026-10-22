@@ -106,7 +106,8 @@ jobs:
           tag_name: v6
           target_commitish: 004c61a1e1be556b59b735747d38aa9652120e53
           name: Controle Catedral V6 — Última estável
-          prerelease: true
+          prerelease: false
+          make_latest: false
           overwrite_files: true
           fail_on_unmatched_files: true
           files: |
