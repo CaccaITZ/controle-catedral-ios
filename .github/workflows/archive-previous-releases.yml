@@ -1,0 +1,158 @@
+name: Arquivar versões anteriores nas Releases
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/archive-previous-releases.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-historical-releases:
+    name: Publicar builds históricos Android e iOS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Baixar APK anterior à V7
+        uses: actions/download-artifact@v4
+        with:
+          name: controle-catedral-android-apk
+          repository: CaccaITZ/controle-catedral-ios
+          run-id: 39371995901
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: downloads/pre-v7/android
+
+      - name: Baixar IPA anterior à V7
+        uses: actions/download-artifact@v4
+        with:
+          name: controle-catedral-unsigned
+          repository: CaccaITZ/controle-catedral-ios
+          run-id: 39371995852
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: downloads/pre-v7/ios
+
+      - name: Baixar APK da V7 antes da correção da splash
+        uses: actions/download-artifact@v4
+        with:
+          name: controle-catedral-v7-estavel-apk
+          repository: CaccaITZ/controle-catedral-ios
+          run-id: 39696832524
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: downloads/v7-pre-splash/android
+
+      - name: Baixar IPA da V7 antes da correção da splash
+        uses: actions/download-artifact@v4
+        with:
+          name: controle-catedral-unsigned
+          repository: CaccaITZ/controle-catedral-ios
+          run-id: 39696832624
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: downloads/v7-pre-splash/ios
+
+      - name: Baixar APK da V7.1 certificada
+        uses: actions/download-artifact@v4
+        with:
+          name: controle-catedral-v7-1-splash-apk
+          repository: CaccaITZ/controle-catedral-ios
+          run-id: 39698764904
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: downloads/v7-1/android
+
+      - name: Baixar IPA da V7.1 certificada
+        uses: actions/download-artifact@v4
+        with:
+          name: controle-catedral-unsigned
+          repository: CaccaITZ/controle-catedral-ios
+          run-id: 39698764910
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: downloads/v7-1/ios
+
+      - name: Preparar arquivos com nomes por versão e plataforma
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          copy_first() {
+            local pattern="$1"
+            local destination="$2"
+            local source
+            source="$(find "${pattern%/*}" -type f -iname "${pattern##*/}" -print -quit)"
+            if [ -z "$source" ]; then
+              echo "Arquivo não encontrado: $pattern" >&2
+              exit 1
+            fi
+            mkdir -p "$(dirname "$destination")"
+            cp "$source" "$destination"
+            test -s "$destination"
+            echo "Preparado: $destination"
+          }
+
+          copy_first 'downloads/pre-v7/android/*.apk' 'release-assets/pre-v7/Controle-Catedral-pre-V7-Android.apk'
+          copy_first 'downloads/pre-v7/ios/*.ipa' 'release-assets/pre-v7/Controle-Catedral-pre-V7-iOS.ipa'
+          copy_first 'downloads/v7-pre-splash/android/*.apk' 'release-assets/v7-pre-splash/Controle-Catedral-V7-antes-da-correcao-splash-Android.apk'
+          copy_first 'downloads/v7-pre-splash/ios/*.ipa' 'release-assets/v7-pre-splash/Controle-Catedral-V7-antes-da-correcao-splash-iOS.ipa'
+          copy_first 'downloads/v7-1/android/*.apk' 'release-assets/v7-1/Controle-Catedral-V7.1-Android.apk'
+          copy_first 'downloads/v7-1/ios/*.ipa' 'release-assets/v7-1/Controle-Catedral-V7.1-iOS.ipa'
+
+      - name: Publicar versão anterior à V7
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pre-v7
+          target_commitish: 004c61a1e1be556b59b735747d38aa9652120e53
+          name: Controle Catedral — Pré-V7
+          prerelease: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/pre-v7/Controle-Catedral-pre-V7-Android.apk
+            release-assets/pre-v7/Controle-Catedral-pre-V7-iOS.ipa
+          body: |
+            Build histórico anterior à V7, preservado para recuperação e consulta.
+
+            **Tipo de arquivos:** Android APK e iOS IPA não assinado.
+            **Observação:** esta é uma compilação anterior às alterações da V7.1 certificada; não é a versão de referência atual.
+
+      - name: Publicar V7 anterior à correção da splash
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v7-before-splash-fix
+          target_commitish: d842050f511ccbd45e297df84ca2139b03825c75
+          name: Controle Catedral — V7 antes da correção da splash
+          prerelease: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/v7-pre-splash/Controle-Catedral-V7-antes-da-correcao-splash-Android.apk
+            release-assets/v7-pre-splash/Controle-Catedral-V7-antes-da-correcao-splash-iOS.ipa
+          body: |
+            Build histórico da V7 anterior à correção que tornou a tela de splash visível.
+
+            **Tipo de arquivos:** Android APK e iOS IPA não assinado.
+            **Observação:** esta versão não tem a correção final da splash e não substitui a V7.1 certificada.
+
+      - name: Publicar V7.1 certificada
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v7.1
+          target_commitish: 3b24c8326ec0bca4e555f2d67e5d76995ed03efa
+          name: Controle Catedral V7.1 — Certificada
+          prerelease: false
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/v7-1/Controle-Catedral-V7.1-Android.apk
+            release-assets/v7-1/Controle-Catedral-V7.1-iOS.ipa
+          body: |
+            **Versão certificada em 22/10/2026.**
+
+            Inclui o APK Android e o IPA iOS não assinado, com a splash corrigida e a prévia de vídeo funcionando pela URL direta da API Holyrics.
+
+            O IPA é não assinado e deve ser instalado pelo procedimento já utilizado no projeto.
+
+            **Windows:** nenhum instalador executável Windows (.exe ou .msi) foi localizado nos repositórios ou nos artefatos de compilação disponíveis para anexar a esta release.
