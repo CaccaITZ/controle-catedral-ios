@@ -133,7 +133,9 @@ jobs:
             try {
               await github.rest.git.deleteRef({ owner, repo, ref: 'tags/pre-v7' });
             } catch (error) {
-              if (error.status !== 404) throw error;
+              // A remoção da release pode já ter removido a tag. GitHub retorna 422
+              // quando a referência já não existe; nesse caso, não há nada a limpar.
+              if (![404, 422].includes(error.status)) throw error;
             }
 
       - name: Publicar V7 anterior à correção da splash
