@@ -46,6 +46,34 @@
         }
         .hidden { display: none !important; }
 
+        /* Splash visual de marca no WebView; Android 12+ limita a splash nativa ao ícone. */
+        #splashInicial {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            animation: splashInicialSaida 250ms ease-in 1800ms forwards;
+        }
+        #splashInicial img {
+            display: block;
+            width: 68vw;
+            max-width: 110vh;
+            max-height: 72vh;
+            object-fit: contain;
+        }
+        @keyframes splashInicialSaida {
+            to { opacity: 0; visibility: hidden; pointer-events: none; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #splashInicial { animation-duration: 1ms; animation-delay: 1200ms; }
+        }
+
         #textoContainer, #textoProximo, #atualContainer {
             width: 100%;
             height: 100%;
@@ -333,6 +361,11 @@
     </style>
 </head>
 <body>
+
+    <!-- Splash visual da marca enquanto o WebView inicia. -->
+    <div id="splashInicial" aria-hidden="true">
+        <img src="logo500.png" alt="">
+    </div>
 
     <div class="viewer">
         <div class="current">

@@ -1,8 +1,8 @@
 {
   "name": "controle-catedral-ios",
-  "version": "7.0.0",
+  "version": "7.0.1",
   "private": true,
-  "description": "Controle remoto Holyrics — V7 estável",
+  "description": "Controle remoto Holyrics — V7.1 com splash corrigida",
   "scripts": {
     "cap": "cap"
   },
@@ -10,7 +10,8 @@
     "@capacitor/cli": "^7.0.0",
     "@capacitor/core": "^7.0.0",
     "@capacitor/ios": "^7.0.0",
-    "@capacitor/android": "^7.0.0"
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/splash-screen": "^7.0.0"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5"

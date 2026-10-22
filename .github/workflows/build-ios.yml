@@ -89,8 +89,8 @@ jobs:
           $PB -c "Add :UISupportedInterfaceOrientations:UIInterfaceOrientationLandscapeRight string UIInterfaceOrientationLandscapeRight" $PLIST
 
           # 4. V7 — versão visível e número de build nativo
-          $PB -c "Set :CFBundleShortVersionString 7.0.0" $PLIST
-          $PB -c "Set :CFBundleVersion 7" $PLIST
+          $PB -c "Set :CFBundleShortVersionString 7.0.1" $PLIST
+          $PB -c "Set :CFBundleVersion 8" $PLIST
           
           echo "✅ Info.plist configurado para a versão 7.0.0"
 

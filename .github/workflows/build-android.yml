@@ -119,13 +119,13 @@ jobs:
           gradle = gradle_path.read_text(encoding="utf-8")
           gradle, n_code = re.subn(
               r"(?m)^(\s*versionCode\s*=?\s*)\d+\s*$",
-              r"\g<1>7",
+              r"\g<1>8",
               gradle,
               count=1,
           )
           gradle, n_name = re.subn(
               r"(?m)^(\s*versionName\s*=?\s*)[\'\"].*?[\'\"].*$",
-              r'\g<1>"7.0.0"',
+              r'\g<1>"7.0.1"',
               gradle,
               count=1,
           )
@@ -150,7 +150,7 @@ jobs:
       - name: Disponibilizar APK para download
         uses: actions/upload-artifact@v4
         with:
-          name: controle-catedral-v7-estavel-apk
+          name: controle-catedral-v7-1-splash-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30

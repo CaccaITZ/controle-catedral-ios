@@ -10,5 +10,17 @@
   },
   "server": {
     "androidScheme": "http"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1000,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 200,
+      "backgroundColor": "#000000",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_INSIDE",
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
   }
 }
